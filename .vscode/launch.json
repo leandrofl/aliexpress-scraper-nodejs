@@ -1,0 +1,70 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "🚀 Debug AliExpress Scraper",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.js",
+            "console": "integratedTerminal",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "stopOnEntry": false,
+            "runtimeArgs": [
+                "--enable-source-maps"
+            ]
+        },
+        {
+            "name": "🐛 Debug Scraper (Headless OFF)",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.js",
+            "console": "integratedTerminal",
+            "env": {
+                "NODE_ENV": "development",
+                "HEADLESS": "false",
+                "DEBUG": "true",
+                "SLOW_MO": "1000"
+            },
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "stopOnEntry": false
+        },
+        {
+            "name": "⚡ Debug Scraper (Fast Mode)",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.js",
+            "console": "integratedTerminal",
+            "env": {
+                "NODE_ENV": "development",
+                "HEADLESS": "true",
+                "DEBUG": "true",
+                "MAX_PAGES_PER_CATEGORY": "1"
+            },
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "stopOnEntry": false
+        },
+        {
+            "name": "🔧 Debug Config Only",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/config.js",
+            "console": "integratedTerminal",
+            "env": {
+                "DEBUG": "true"
+            },
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        }
+    ]
+}

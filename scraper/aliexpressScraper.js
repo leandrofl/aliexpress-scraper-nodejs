@@ -1,75 +1,166 @@
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { scrollToBottom } from './utils.js';
-import { applyQuantitativeFilter } from '../filters/quantitative.js';
-import { applyQualitativeFilter } from '../filters/qualitative.js';
-import { assessRisk } from '../filters/riskAssessment.js';
+import {
+  scrollUntilAllProductsLoaded,
+  tirarScreenshot,
+  salvarHtmlPesquisa,
+  salvarJsonProduto,
+  delay,
+  randomDelay,
+  logInfo,
+  logSucesso,
+  logErro
+} from './utils.js';
+
+import {
+  applyQuantitativeFilter
+} from '../filters/quantitative.js';
+
+import {
+  applyQualitativeFilter
+} from '../filters/qualitative.js';
+
+import {
+  assessRisk
+} from '../filters/riskAssessment.js';
+
+import {
+  CATEGORIES,
+  MAX_PRODUCTS_RAW,
+  TARGET_PRODUCTS_FINAL,
+  MAX_PAGES_PER_CATEGORY
+} from '../config.js';
 
 puppeteer.use(StealthPlugin());
 
-export async function scrapeAliExpressProducts(config) {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--lang=pt-BR',
-      '--proxy-server=http://proxy.public.free:8080' // ← altere conforme proxy gratuito disponível
-    ]
-  });
-
+export async function processCategory(browser, categoria) {
   const page = await browser.newPage();
-
-  // Spoof de navegador (idioma, timezone, etc.)
+  await page.setViewport({ width: 1280, height: 900 });
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   );
-  await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9' });
 
-  await page.goto(config.BASE_URL, { waitUntil: 'domcontentloaded' });
+  const produtos = [];
+  let pagina = 1;
 
-  await page.type('input[name="SearchText"]', config.CATEGORY_KEYWORDS[0]);
-  await Promise.all([
-    page.keyboard.press('Enter'),
-    page.waitForNavigation({ waitUntil: 'domcontentloaded' })
-  ]);
+  logInfo(`🔍 Iniciando processamento da categoria: ${categoria}`);
 
-  await scrollToBottom(page);
+  while (
+    produtos.length < MAX_PRODUCTS_RAW &&
+    pagina <= MAX_PAGES_PER_CATEGORY
+  ) {
+    try {
+      const searchUrl = `https://pt.aliexpress.com/wholesale?SearchText=${encodeURIComponent(categoria)}&page=${pagina}&sortType=total_tranpro_desc`;
+      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-  const produtos = await page.evaluate(() => {
-    const items = Array.from(document.querySelectorAll('.search-card-item'));
-    return items.map(item => {
-      const nome = item.querySelector('h1, h2, h3')?.innerText || '';
-      const preco = item.querySelector('.price')?.innerText || '';
-      const url = item.querySelector('a')?.href || '';
-      const vendas = item.innerHTML.includes('vendido') ? item.innerText : '';
-      return { nome, preco, url, vendas };
-    });
-  });
+      await scrollUntilAllProductsLoaded(page);
+      await tirarScreenshot(page, categoria, pagina);
+      await salvarHtmlPesquisa(page, categoria, pagina);
 
-  const produtosFiltrados = [];
+      const produtosPagina = await extractProductsFromPage(page, categoria, pagina);
 
-  for (const p of produtos) {
-    const aprovadoQuant = applyQuantitativeFilter(p);
-    const aprovadoQuali = applyQualitativeFilter(p);
-    const risco = assessRisk(p);
+      for (const produto of produtosPagina) {
+        await filterAndAppendProduct(produto, produtos, categoria, pagina);
+        if (produtos.filter(p => p.aprovado).length >= TARGET_PRODUCTS_FINAL) break;
+      }
 
-    produtosFiltrados.push({
-      ...p,
-      aprovado: aprovadoQuant && aprovadoQuali,
-      aprovadoQuant,
-      aprovadoQuali,
-      risco
-    });
+      logInfo(`📦 Página ${pagina} finalizada. Total acumulado: ${produtos.length}`);
+      pagina++;
+      await randomDelay();
 
-    if (
-      produtosFiltrados.filter(p => p.aprovado).length >=
-      config.MIN_APPROVED_PRODUCTS
-    ) {
+    } catch (err) {
+      logErro(`Erro na página ${pagina} da categoria ${categoria}: ${err.message}`);
       break;
     }
   }
 
-  await browser.close();
-  return produtosFiltrados;
+  await page.close();
+  return produtos;
+}
+
+export async function extractProductsFromPage(page, categoria, pagina) {
+  try {
+    const produtos = await page.evaluate(() => {
+      const cards = document.querySelectorAll('a.search-card-item');
+      const lista = [];
+
+      for (const card of cards) {
+        const nome = card.querySelector('h1,h2,h3')?.innerText || '';
+        const preco = card.querySelector('.search-card-item-price')?.innerText || '';
+        const url = card.href || '';
+        const vendas = card.innerText.includes('vendido') ? card.innerText : '';
+        if (nome && url) {
+          lista.push({ nome, preco, url, vendas });
+        }
+      }
+
+      return lista;
+    });
+
+    logSucesso(`✔️ ${produtos.length} produtos extraídos da página ${pagina}.`);
+    return produtos;
+
+  } catch (err) {
+    logErro(`Erro ao extrair produtos da página ${pagina}: ${err.message}`);
+    return [];
+  }
+}
+
+export async function extractProductDetails(page, url) {
+  try {
+    const novaAba = await page.browser().newPage();
+    await novaAba.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await delay(2000);
+
+    const detalhes = await novaAba.evaluate(() => {
+      const getText = (selector) => document.querySelector(selector)?.innerText || '';
+      return {
+        vendedor: getText('.store-info .store-name'),
+        peso: getText('td:contains("Peso") + td'),
+        frete: getText('.dynamic-shipping')
+      };
+    });
+
+    await novaAba.close();
+    return detalhes;
+
+  } catch (err) {
+    logErro(`Erro ao acessar detalhes do produto ${url}: ${err.message}`);
+    return { vendedor: '', peso: '', frete: '' };
+  }
+}
+
+export async function filterAndAppendProduct(produto, lista, categoria, pagina) {
+  try {
+    const page = lista._tempPageRef;
+    const detalhes = await extractProductDetails(page, produto.url);
+    const produtoCompleto = { ...produto, ...detalhes };
+
+    const aprovadoQuant = applyQuantitativeFilter(produtoCompleto);
+    const aprovadoQuali = applyQualitativeFilter(produtoCompleto);
+    const risco = assessRisk(produtoCompleto);
+
+    const aprovadoFinal = aprovadoQuant && aprovadoQuali;
+
+    const itemFinal = {
+      ...produtoCompleto,
+      aprovadoQuant,
+      aprovadoQuali,
+      risco,
+      aprovado: aprovadoFinal
+    };
+
+    lista.push(itemFinal);
+
+    if (aprovadoFinal) {
+      logSucesso(`👍 Produto aprovado: ${produto.nome}`);
+    } else {
+      logInfo(`⛔ Produto reprovado: ${produto.nome}`);
+    }
+
+    await salvarJsonProduto(itemFinal, categoria, pagina);
+
+  } catch (err) {
+    logErro(`Erro ao avaliar produto: ${err.message}`);
+  }
 }

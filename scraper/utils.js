@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { config } from '../config.js';
+import { CONFIG } from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,10 +73,10 @@ export const logErro = (msg) => console.log(`❌ ${msg}`);
 // Screenshot
 export async function tirarScreenshot(page, categoria, pagina, fullPage = true) {
   try {
-    await fs.ensureDir(config.DIRETORIO_DEBUG);
+    await fs.ensureDir(CONFIG.general.debugDir);
     const timestamp = new Date().toISOString().replace(/[-:.]/g, '_');
     const nomeArquivo = `screenshot_${slugify(categoria)}_p${pagina}_${timestamp}.png`;
-    const caminho = path.join(config.DIRETORIO_DEBUG, nomeArquivo);
+    const caminho = path.join(CONFIG.general.debugDir, nomeArquivo);
     await page.screenshot({ path: caminho, fullPage });
     logSucesso(`Screenshot salvo em ${caminho}`);
   } catch (e) {
@@ -87,10 +87,10 @@ export async function tirarScreenshot(page, categoria, pagina, fullPage = true) 
 // Salva JSON bruto
 export async function salvarJsonProduto(json, categoria, pagina) {
   try {
-    await fs.ensureDir(config.DIRETORIO_DEBUG);
+    await fs.ensureDir(CONFIG.general.debugDir);
     const timestamp = new Date().toISOString().replace(/[-:.]/g, '_');
     const nome = `json_${slugify(categoria)}_p${pagina}_${timestamp}.json`;
-    const caminho = path.join(config.DIRETORIO_DEBUG, nome);
+    const caminho = path.join(CONFIG.general.debugDir, nome);
     await fs.writeJson(caminho, json, { spaces: 2 });
     logSucesso(`Dados salvos em ${caminho}`);
   } catch (e) {
@@ -101,10 +101,10 @@ export async function salvarJsonProduto(json, categoria, pagina) {
 // Salva HTML da pesquisa
 export async function salvarHtmlPesquisa(page, categoria, pagina) {
   try {
-    await fs.ensureDir(config.DIRETORIO_DEBUG);
+    await fs.ensureDir(CONFIG.general.debugDir);
     const timestamp = new Date().toISOString().replace(/[-:.]/g, '_');
     const nome = `html_${slugify(categoria)}_p${pagina}_${timestamp}.html`;
-    const caminho = path.join(config.DIRETORIO_DEBUG, nome);
+    const caminho = path.join(CONFIG.general.debugDir, nome);
     const html = await page.content();
     await fs.writeFile(caminho, html, 'utf-8');
     logSucesso(`HTML salvo em ${caminho}`);
