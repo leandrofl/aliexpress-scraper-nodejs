@@ -1,0 +1,20 @@
+{
+  "name": "aliexpress-scraper-node",
+  "version": "1.0.0",
+  "description": "Scraper do AliExpress com Puppeteer Extra e filtros customizados",
+  "main": "main.js",
+  "type": "module",
+  "dotenv": "^16.4.5",
+  "scripts": {
+    "start": "node main.js",
+    "scrape": "node main.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "exceljs": "^4.4.0",
+    "fs-extra": "^11.2.0",
+    "puppeteer": "^24.15.0",
+    "puppeteer-extra": "^3.3.4",
+    "puppeteer-extra-plugin-stealth": "^2.11.1"
+  }
+}
