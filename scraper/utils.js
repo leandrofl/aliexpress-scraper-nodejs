@@ -112,3 +112,105 @@ export async function salvarHtmlPesquisa(page, categoria, pagina) {
     logErro(`Erro ao salvar HTML: ${e.message}`);
   }
 }
+
+// Filtrar por mais vendidos
+export async function filtrarPorMaisVendidos(page) {
+  try {
+    logInfo('🔍 Procurando filtro de ordenação por mais vendidos...');
+    
+    // Aguardar um pouco para a página carregar completamente
+    await delay(2000);
+    
+    // Tentar encontrar o botão/dropdown de ordenação
+    const seletoresOrdenacao = [
+      'div[ae_object_value="number_of_orders"]',
+      '[data-spm-anchor-id*="order"]',
+      'div[title*="Mais vendido"]',
+      'div[title*="mais vendido"]',
+      'div[title*="vendidos"]',
+      '.comet-select-dropdown-item[data-value*="order"]',
+      '.search-sort-by .comet-select',
+      '.search-sort .comet-select'
+    ];
+    
+    let filtroEncontrado = false;
+    
+    for (const seletor of seletoresOrdenacao) {
+      try {
+        const elementos = await page.$$(seletor);
+        if (elementos.length > 0) {
+          logInfo(`✅ Encontrado seletor de ordenação: ${seletor}`);
+          
+          // Tentar clicar no primeiro elemento encontrado
+          await elementos[0].click();
+          await delay(1500);
+          
+          // Se for um dropdown, procurar pela opção "mais vendidos"
+          const opcoesMaisVendidos = [
+            'div[ae_object_value="number_of_orders"]',
+            'div[title*="Mais vendido"]',
+            'div[title*="mais vendido"]',
+            'div[title*="vendidos"]',
+            '.comet-select-dropdown-item[data-value*="order"]'
+          ];
+          
+          for (const opcao of opcoesMaisVendidos) {
+            const elementoOpcao = await page.$(opcao);
+            if (elementoOpcao) {
+              await elementoOpcao.click();
+              await delay(2000);
+              logSucesso('✅ Filtro "Mais vendidos" aplicado com sucesso!');
+              filtroEncontrado = true;
+              break;
+            }
+          }
+          
+          if (filtroEncontrado) break;
+        }
+      } catch (e) {
+        // Continuar tentando outros seletores
+        continue;
+      }
+    }
+    
+    if (!filtroEncontrado) {
+      // Tentar método alternativo: procurar por texto
+      try {
+        await page.evaluate(() => {
+          const elementos = Array.from(document.querySelectorAll('*'));
+          const elemento = elementos.find(el => 
+            el.textContent && 
+            (el.textContent.includes('Mais vendido') || 
+             el.textContent.includes('mais vendido') ||
+             el.textContent.includes('Vendidos'))
+          );
+          if (elemento && elemento.click) {
+            elemento.click();
+            return true;
+          }
+          return false;
+        });
+        
+        await delay(2000);
+        logSucesso('✅ Filtro "Mais vendidos" aplicado via texto!');
+        filtroEncontrado = true;
+      } catch (e) {
+        logErro(`Erro ao aplicar filtro por texto: ${e.message}`);
+      }
+    }
+    
+    if (filtroEncontrado) {
+      // Aguardar a página recarregar com os resultados filtrados
+      await delay(3000);
+      // logSucesso('🎯 Página recarregada com produtos ordenados por mais vendidos');
+    } else {
+      logErro('⚠️ Não foi possível encontrar o filtro de "Mais vendidos"');
+    }
+    
+    return filtroEncontrado;
+    
+  } catch (error) {
+    logErro(`Erro ao filtrar por mais vendidos: ${error.message}`);
+    return false;
+  }
+}

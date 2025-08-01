@@ -50,6 +50,10 @@ function avaliarPedidos(pedidos) {
 
 // Utilitário: extrai número de string
 function extrairNumero(texto) {
+  // Garantir que é string antes de aplicar replace
+  if (typeof texto !== 'string') {
+    texto = String(texto || '');
+  }
   const clean = (texto || '').replace(/[^\d]/g, '');
   return parseInt(clean || '0');
 }

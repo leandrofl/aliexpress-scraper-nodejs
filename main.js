@@ -1,56 +1,18 @@
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { CONFIG, CATEGORIES } from './config.js';
-import { processCategory } from './scraper/aliexpressScraper.js';
+import { setupBrowser, processCategory } from './scraper/aliexpressScraper.js';
 import { exportToExcel } from './export/excelExporter.js';
 import { logInfo, logSucesso, logErro } from './scraper/utils.js';
-
-puppeteer.use(StealthPlugin());
 
 const iniciar = async () => {
     logInfo('🚀 Iniciando processo completo de scraping por categoria...');
     
-    // 🔴 BREAKPOINT: Configuração inicial
-    console.log('🐛 [DEBUG] Configurações carregadas:', {
-        categories: CATEGORIES,
-        headless: CONFIG.browser.headless,
-        debug: CONFIG.general.debug
-    });
-
-    const launchArgs = [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--lang=pt-BR'
-    ];
-
-    if (CONFIG.browser.proxy) {
-        launchArgs.push(`--proxy-server=${CONFIG.browser.proxy}`);
-    }
-
-    const browser = await puppeteer.launch({
-        headless: CONFIG.browser.headless,
-        executablePath: CONFIG.browser.chromePath,
-        //userDataDir: CONFIG.browser.userDataDir, // Descomente se quiser usar um perfil específico
-        slowMo: CONFIG.browser.slowMo,
-        args: launchArgs
-    });
-
-    // 🔴 BREAKPOINT: Browser iniciado
-    console.log('🐛 [DEBUG] Browser iniciado com sucesso');
-
-    if (CONFIG.browser.proxy) {
-        launchArgs.push(`--proxy-server=${CONFIG.browser.proxy}`);
-    }
+    // Usar a função de setup do aliexpressScraper
+    const browser = await setupBrowser();
 
     for (const categoria of CATEGORIES) {
         try {
-            // 🔴 BREAKPOINT: Início de cada categoria
-            logInfo(`📂 Categoria: ${categoria}`);
-            console.log('🐛 [DEBUG] Processando categoria:', categoria);
-            
             const produtos = await processCategory(browser, categoria);
             
-            // 🔴 BREAKPOINT: Produtos encontrados
             console.log('🐛 [DEBUG] Produtos encontrados:', produtos.length);
             
             await exportToExcel(produtos, categoria);
@@ -62,8 +24,44 @@ const iniciar = async () => {
         }
     }
 
-    await browser.close();
-    logInfo('✅ Processo de scraping finalizado para todas as categorias.');
+    try {
+        await cleanupBrowser(browser);
+        logInfo('✅ Processo de scraping finalizado para todas as categorias.');
+    } catch (closeError) {
+        // Ignorar erros de fechamento do browser
+        logInfo('✅ Processo de scraping finalizado para todas as categorias.');
+    }
 };
+
+// Função de cleanup robusto
+async function cleanupBrowser(browser) {
+  try {
+    // Fechar todas as páginas abertas primeiro
+    const pages = await browser.pages();
+    for (const page of pages) {
+      try {
+        await page.close();
+      } catch (error) {
+        // Ignora erros ao fechar páginas individuais
+      }
+    }
+    
+    // Aguardar um pouco para processos se organizarem
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Fechar o browser
+    await browser.close();
+  } catch (error) {
+    console.log('⚠️  Processo do browser finalizado externamente');
+    
+    // Força encerramento em último caso (Windows)
+    try {
+      const { spawn } = require('child_process');
+      spawn('taskkill', ['/f', '/im', 'chrome.exe'], { stdio: 'ignore' });
+    } catch (killError) {
+      // Ignora erro se não conseguir forçar encerramento
+    }
+  }
+}
 
 iniciar();
