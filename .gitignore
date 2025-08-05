@@ -78,3 +78,13 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Debug files and screenshots
+scraper/debug_files/
+*.png
+*.jpg
+*.jpeg
+screenshots/
+
+# Test files temporários
+test-config.js
