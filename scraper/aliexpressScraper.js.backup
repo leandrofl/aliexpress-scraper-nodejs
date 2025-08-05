@@ -76,7 +76,7 @@ export async function setupBrowser() {
         }
 
         // Log de configurações para debug
-        logDebug('🐛 Configurações carregadas:', {
+        logDebug('� Configurações carregadas:', {
             categories: CATEGORIES,
             maxProducts: MAX_PRODUCTS_RAW,
             targetProducts: TARGET_PRODUCTS_FINAL,
@@ -247,6 +247,7 @@ function setupBrowserCleanupHandlers(browser) {
  * @param {string} categoria - Nome da categoria a ser processada
  * @returns {Promise<Array>} Lista de produtos processados e analisados
  */
+export async function processCategory(browser, categoria) {
 export async function processCategory(browser, categoria) {
     try {
         // Validação de entrada
@@ -789,300 +790,480 @@ export async function extractProductsFromPage(page, categoria, pagina, produtosE
     }
 }
 
-// =================================
-// EXTRAÇÃO DE DETALHES DE PRODUTO
-// =================================
-
-/**
- * Extrai detalhes específicos de um produto acessando sua página individual
- * Utiliza interceptação de API e fallback para DOM quando necessário
- * 
- * @param {Browser} browser - Instância do browser
- * @param {Object} produto - Dados básicos do produto
- * @returns {Promise<Object>} Detalhes extraídos do produto
- */
-export async function extractProductDetails(browser, produto) {
-    try {
-        // Validação de entrada
-        if (!browser || !produto) {
-            throw new Error('Browser e produto são obrigatórios');
-        }
-
-        // Usar product_id se disponível, senão extrair da URL
-        let productId = produto.product_id;
-        let urlProduto = produto.url || produto.href;
-        
-        if (!productId && urlProduto) {
-            const productIdMatch = urlProduto.match(/\/item\/(\d+)\.html/);
-            if (productIdMatch) {
-                productId = productIdMatch[1];
-            }
-        }
-
-        if (!productId) {
-            logErro(`❌ Product ID não encontrado para ${urlProduto}`);
-            return getDefaultProductDetails();
-        }
-        
-        // Garantir URL padrão
-        if (!urlProduto || !urlProduto.startsWith('https://pt.aliexpress.com/item/')) {
-            urlProduto = `https://pt.aliexpress.com/item/${productId}.html`;
-        }
-        
-        logDebug(`🔍 Acessando PDP: ${urlProduto}`);
-        
-        // Criar nova aba com tratamento de erro
-        let novaAba;
-        try {
-            novaAba = await browser.newPage();
-        } catch (pageError) {
-            logErro(`❌ Erro ao criar nova aba: ${pageError.message}`);
-            return getDefaultProductDetails();
-        }
-        
-        let dadosAPI = null;
-        
-        try {
-            // Interceptar resposta da API antes de navegar
-            novaAba.on('response', async (response) => {
-                if (response.url().includes('mtop.aliexpress.pdp.pc.query') && response.status() === 200) {
-                    try {
-                        const rawText = await response.text();
-                        
-                        // Múltiplas tentativas de limpeza do wrapper JSONP
-                        let cleanText = rawText;
-                        
-                        // Método 1: Remover wrapper mtopjsonp padrão
-                        cleanText = cleanText.replace(/^mtopjsonp\d*\(/, '').replace(/\)\s*$/, '');
-                        
-                        // Método 2: Se ainda tem caracteres estranhos no início, tentar encontrar o {
-                        const firstBrace = cleanText.indexOf('{');
-                        if (firstBrace > 0) {
-                            cleanText = cleanText.substring(firstBrace);
-                        }
-                        
-                        // Método 3: Se ainda tem caracteres no final, encontrar o último }
-                        const lastBrace = cleanText.lastIndexOf('}');
-                        if (lastBrace > 0 && lastBrace < cleanText.length - 1) {
-                            cleanText = cleanText.substring(0, lastBrace + 1);
-                        }
-                        
-                        const jsonData = JSON.parse(cleanText);
-                        dadosAPI = jsonData?.data?.result || {};
-                        logSucesso(`✅ API interceptada com sucesso para produto ${productId}`);
-                    } catch (e) {
-                        logErro(`❌ Erro ao processar JSON da API: ${e.message}`);
-                    }
-                }
-            });
-            
-            // Navegar para a página do produto
-            await novaAba.goto(urlProduto, { 
-                waitUntil: 'domcontentloaded', 
-                timeout: 40000 
-            });
-            
-            // Aguardar um pouco para garantir que a API foi chamada
-            await delay(3000);
-            
-        } catch (navigationError) {
-            logErro(`❌ Erro na navegação para ${urlProduto}: ${navigationError.message}`);
-            return getDefaultProductDetails();
-        }
-        
-        let detalhes = getDefaultProductDetails();
-        
-        if (dadosAPI) {
-            // Parse dos dados da API seguindo a lógica otimizada
-            detalhes = parseProductJson(dadosAPI, productId);
         } else {
-            // Fallback: tentar extrair dados do DOM
-            logInfo(`⚠️ API não interceptada, tentando fallback DOM para ${productId}`);
-            try {
-                detalhes = await novaAba.evaluate(() => {
-                    const getText = (selector) => {
-                        try {
-                            return document.querySelector(selector)?.innerText || '';
-                        } catch {
-                            return '';
-                        }
-                    };
-                    
-                    return {
-                        vendedor: getText('.store-info .store-name, .shop-name'),
-                        peso: getText('td:contains("Peso") + td'),
-                        frete: getText('.dynamic-shipping'),
-                        reviews: parseInt(getText('.reviews-num, .rating-num') || '0'),
-                        rating: parseFloat(getText('.rating-value, .stars-rating') || '0'),
-                        vendas: 0
-                    };
-                });
-            } catch (domError) {
-                logErro(`❌ Erro no fallback DOM: ${domError.message}`);
-            }
+          throw new Error('Caixa de busca não encontrada');
         }
+      } else {
+        // Páginas seguintes: tentar navegar pelos botões
+        logInfo(`➡️ Navegando para página ${pagina}...`);
+        const nextButton = await page.$('button[aria-label="next"], .next-btn, .comet-pagination-next, .comet-pagination-item:last-child');
+        if (nextButton) {
+          await nextButton.click();
+          await page.waitForTimeout(3000);
+        } else {
+          logInfo(`⚠️ Botão de próxima página não encontrado, finalizando...`);
+          break;
+        }
+      }
+
+      // Aguardar produtos carregarem
+      try {
+        await page.waitForSelector('a.search-card-item, .item, .product, [data-pl="product-list"] a', { timeout: 30000 });
+      } catch (selectorError) {
+        logInfo(`⚠️ Produtos não encontrados na página ${pagina}, tentando aguardar mais...`);
+        await delay(5000);
+      }
+
+      await scrollUntilAllProductsLoaded(page);
+      //await tirarScreenshot(page, categoria, pagina);
+      //await salvarHtmlPesquisa(page, categoria, pagina);
+
+      const produtosPagina = await extractProductsFromPage(page, categoria, pagina, produtos);
+
+      // Separar produtos originais e bundles
+      const produtosOriginais = produtosPagina.filter(p => !p.is_bundle);
+      const produtosBundle = produtosPagina.filter(p => p.is_bundle);
+
+      logInfo(`Página ${pagina} | Total encontrados: ${produtosPagina.length} | Originais: ${produtosOriginais.length} | Bundles: ${produtosBundle.length}`);
+
+      let produtosMargemAprovadaEstasPagina = 0;
+
+      // NOVO FLUXO: Processar cada produto com validação de margem PRIMEIRO
+      for (let i = 0; i < produtosPagina.length; i++) {
+        const produto = produtosPagina[i];
         
-        // Fechar aba
+        // Pular bundles
+        if (produto.is_bundle) {
+          logInfo(`⚠️ Produto bundle ignorado: ${produto.href}`);
+          continue;
+        }
+
         try {
-            await novaAba.close();
-        } catch (closeError) {
-            logErro(`⚠️ Erro ao fechar aba: ${closeError.message}`);
-        }
-        
-        return detalhes;
+          logInfo(`� [1/3] Validando margem do produto ${i + 1}/${produtosPagina.length}: ${produto.product_id}`);
+          
+          // PASSO 1: Extrair detalhes do produto
+          const detalhes = await extractProductDetails(browser, produto);
+          const produtoCompleto = { ...produto, ...detalhes, categoria };
 
-    } catch (error) {
-        logErro(`💥 Erro ao extrair detalhes do produto: ${error.message}`);
-        return getDefaultProductDetails();
-    }
-}
+          // PASSO 2: VALIDAÇÃO DE MARGEM PRIMEIRO (novo fluxo)
+          const validacaoMargem = await validarMargemOtimizada(produtoCompleto);
+          
+          if (!validacaoMargem.sucesso || !validacaoMargem.recomendacao.viavel) {
+            logInfo(`⛔ Produto rejeitado por margem insuficiente: ${produto.product_id}`);
+            continue; // Pula para o próximo produto
+          }
 
-/**
- * Retorna estrutura padrão de detalhes de produto
- * @returns {Object} Detalhes padrão
- */
-function getDefaultProductDetails() {
-    return {
-        vendedor: '',
-        peso: '',
-        frete: '',
-        reviews: 0,
-        rating: 0,
-        vendas: 0,
-        preco: 0,
-        imagens: '',
-        rastreamento: false,
-        custoFrete: 0,
-        tipoFrete: '',
-        tempoEntrega: 0,
-        avaliacaoVendedor: 0,
-        tempoAbertura: ''
-    };
-}
+          logSucesso(`✅ [1/3] Margem aprovada: ${validacaoMargem.recomendacao.cenario} (${validacaoMargem.analiseMargens.realista.margemPercentual.toFixed(1)}%)`);
 
-/**
- * Faz parse do JSON da API seguindo lógica otimizada
- * @param {Object} data - Dados da API
- * @param {string} productId - ID do produto
- * @returns {Object} Detalhes extraídos
- */
-function parseProductJson(data, productId) {
-    try {
-        const detalhes = getDefaultProductDetails();
+          // PASSO 3: FILTROS QUANTITATIVOS (apenas para produtos com margem aprovada)
+          logInfo(`📊 [2/3] Aplicando filtros quantitativos...`);
+          const aprovadoQuant = applyQuantitativeFilter(produtoCompleto);
 
-        // Título
-        const title = data?.GLOBAL_DATA?.globalData?.subject || '';
-        
-        // Preço
-        const priceStr = data?.PRICE?.targetSkuPriceInfo?.salePriceString || '';
-        if (priceStr) {
-            const priceMatch = priceStr.match(/R\$\s*([\d,.]+)/);
-            if (priceMatch) {
-                detalhes.preco = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
-            }
-        }
-        
-        // Vendas
-        const otherText = data?.PC_RATING?.otherText || '';
-        if (otherText && otherText.includes('vendidos')) {
-            const salesMatch = otherText.match(/(\d+)/);
-            if (salesMatch) {
-                detalhes.vendas = parseInt(salesMatch[1]);
-            }
-        }
-        
-        // Imagens
-        const images = data?.HEADER_IMAGE_PC?.imagePathList || [];
-        detalhes.imagens = images.join(', ');
-        
-        // Reviews e Rating
-        const ratingInfo = data?.PC_RATING || {};
-        detalhes.reviews = parseInt(ratingInfo.totalValidNum || 0);
-        detalhes.rating = parseFloat(ratingInfo.rating || 0);
-        
-        // Informações de frete
-        const logisticsList = data?.SHIPPING?.originalLayoutResultList || [];
-        if (logisticsList.length > 0) {
-            const logistics = logisticsList[0]?.bizData || {};
-            const additionLayout = logisticsList[0]?.additionLayout || [];
+          // PASSO 4: FILTROS QUALITATIVOS (comentados para evitar custos OpenAI)
+          // logInfo(`🎯 [3/3] Aplicando filtros qualitativos...`);
+          // const aprovadoQuali = applyQualitativeFilter(produtoCompleto);
+          const aprovadoQuali = true; // Temporariamente aprovado
+
+          // PASSO 5: ANÁLISE DE RISCO
+          const risco = assessRisk(produtoCompleto);
+
+          // PASSO 6: APROVAÇÃO FINAL
+          const aprovadoFinal = aprovadoQuant.aprovado && aprovadoQuali;
+
+          const itemFinal = {
+            ...produtoCompleto,
+            validacaoMargem,
+            aprovadoQuant,
+            aprovadoQuali,
+            risco,
+            aprovado: aprovadoFinal
+          };
+
+          // Adicionar à lista de produtos com margem aprovada
+          produtosComMargemAprovada.push(itemFinal);
+          produtosMargemAprovadaEstasPagina++;
+
+          if (aprovadoFinal) {
+            produtos.push(itemFinal);
+            logSucesso(`👍 [FINAL] Produto TOTALMENTE aprovado: ${produto.product_id}`);
             
-            detalhes.custoFrete = parseFloat(logistics.displayAmount || 0);
-            detalhes.tipoFrete = logistics.deliveryOptionCode || '';
-            detalhes.tempoEntrega = parseFloat(logistics.guaranteedDeliveryTime || 0);
-            
-            // Rastreamento
-            if (additionLayout.length > 0) {
-                detalhes.rastreamento = additionLayout[0]?.content === 'Rastreamento Disponível';
+            // Parar se atingir o alvo de produtos finais aprovados
+            if (produtos.length >= TARGET_PRODUCTS_FINAL) {
+              logInfo(`🎯 Meta de ${TARGET_PRODUCTS_FINAL} produtos finais aprovados atingida!`);
+              break;
             }
+          } else {
+            logInfo(`⚠️ [FINAL] Produto aprovado em margem mas reprovado nos filtros: ${produto.product_id}`);
+          }
+
+          logSucesso(`� Página ${pagina} | Produto processado ${i + 1}/${produtosPagina.length}: ${produto.product_id}`);
+          
+          // Parar se atingir o alvo de produtos com margem aprovada
+          if (produtosComMargemAprovada.length >= MAX_PRODUCTS_RAW) {
+            logInfo(`📦 Meta de ${MAX_PRODUCTS_RAW} produtos com margem aprovada atingida!`);
+            break;
+          }
+
+        } catch (err) {
+          logErro(`🔴 Página ${pagina} | Erro no produto ${i + 1}/${produtosPagina.length}: ${produto.product_id} - ${err.message}`);
         }
-        
-        // Informações do vendedor
-        const supplier = data?.SHOP_CARD_PC || {};
-        detalhes.vendedor = supplier.storeName || '';
-        detalhes.avaliacaoVendedor = supplier.sellerPositiveRate ? (parseFloat(supplier.sellerPositiveRate) / 20) : 0;
-        detalhes.tempoAbertura = supplier.sellerInfo?.openTime || '';
-        
-        logSucesso(`✅ Parse completo do produto ${productId}`);
-        return detalhes;
-        
-    } catch (error) {
-        logErro(`❌ Erro ao fazer parse do JSON: ${error.message}`);
-        return getDefaultProductDetails();
+      }
+
+      // Atualizar contadores de tentativas
+      if (produtosMargemAprovadaEstasPagina === 0) {
+        tentativasConsecutivasSemSucesso++;
+        logInfo(`⚠️ Página ${pagina} sem produtos com margem aprovada. Tentativas consecutivas: ${tentativasConsecutivasSemSucesso}/${MAX_TENTATIVAS_SEM_SUCESSO}`);
+      } else {
+        tentativasConsecutivasSemSucesso = 0; // Reset contador
+      }
+
+      logInfo(`📦 Página ${pagina} finalizada. Margem aprovada: ${produtosComMargemAprovada.length}/${MAX_PRODUCTS_RAW} | Totalmente aprovados: ${produtos.length}/${TARGET_PRODUCTS_FINAL}`);
+      pagina++;
+      await randomDelay();
+
+    } catch (err) {
+      logErro(`Erro na página ${pagina} da categoria ${categoria}: ${err.message}`);
+      tentativasConsecutivasSemSucesso++;
+      if (tentativasConsecutivasSemSucesso >= MAX_TENTATIVAS_SEM_SUCESSO) {
+        logErro(`❌ Máximo de tentativas consecutivas sem sucesso atingido. Finalizando categoria ${categoria}.`);
+        break;
+      }
     }
+  }
+
+  // Log final com estatísticas detalhadas
+  logInfo(`📊 CATEGORIA ${categoria} FINALIZADA:`);
+  logInfo(`   • Produtos com margem aprovada: ${produtosComMargemAprovada.length}/${MAX_PRODUCTS_RAW}`);
+  logInfo(`   • Produtos totalmente aprovados: ${produtos.length}/${TARGET_PRODUCTS_FINAL}`);
+  logInfo(`   • Taxa de conversão: ${((produtos.length / Math.max(1, produtosComMargemAprovada.length)) * 100).toFixed(1)}%`);
+  logInfo(`   • Páginas processadas: ${pagina - 1}`);
+
+  // Não fechar a página pois é a aba principal
+  return {
+    produtosTotalmenteAprovados: produtos,
+    produtosComMargemAprovada: produtosComMargemAprovada,
+    estatisticas: {
+      totalComMargem: produtosComMargemAprovada.length,
+      totalAprovados: produtos.length,
+      paginasProcessadas: pagina - 1,
+      taxaConversao: ((produtos.length / Math.max(1, produtosComMargemAprovada.length)) * 100).toFixed(1)
+    }
+  };
 }
 
-// =================================
-// LIMPEZA E FINALIZAÇÃO
-// =================================
+export async function extractProductsFromPage(page, categoria, pagina, produtosExistentes = []) {
+  try {
+    const produtos = await page.evaluate((categoria) => {
+      // Aguardar elementos aparecerem
+      const selectors = [
+        'a[class*="search-card-item"][href*="/item/"]',
+        'a[class*="search-card-item"][href*="BundleDeals"]'
+      ];
 
-/**
- * Limpa recursos do browser de forma segura
- * @param {Browser} browser - Instância do browser
- */
+      let elementos = [];
+      for (const selector of selectors) {
+        const found = document.querySelectorAll(selector);
+        elementos = [...elementos, ...Array.from(found)];
+      }
+
+      console.log(`🔎 Total de elementos <a> encontrados no DOM: ${elementos.length}`);
+
+      const lista = [];
+      let totalOriginal = 0;
+      let totalBundle = 0;
+
+      for (const el of elementos) {
+        const href = el.href || '';
+        
+        // Verificar se é produto original
+        const matchOriginal = href.match(/\/item\/(\d+)\.html/);
+        // Verificar se é bundle
+        const matchBundle = href.match(/BundleDeals\d?\?productIds=([0-9:]+)/);
+        
+        if (!matchOriginal && !matchBundle) {
+          continue;
+        }
+
+        let productId = null;
+        let isBundle = false;
+
+        if (matchOriginal) {
+          productId = matchOriginal[1];
+          isBundle = false;
+          totalOriginal++;
+        } else if (matchBundle) {
+          productId = null; // Bundles não têm product_id único
+          isBundle = true;
+          totalBundle++;
+        }
+
+        const produto = {
+          product_id: productId,
+          categoria: categoria,
+          aprovado: false,
+          is_bundle: isBundle,
+          href: href,
+          // Campos adicionais do DOM para compatibilidade
+          nome: el.querySelector('h1,h2,h3,.item-title,.product-title')?.innerText || '',
+          preco: el.querySelector('.search-card-item-price,.price,.item-price')?.innerText || '',
+          url: href,
+          vendas: el.innerText.includes('vendido') ? el.innerText : ''
+        };
+
+        lista.push(produto);
+      }
+
+      console.log(`[DEBUG] Produtos extraídos do DOM nesta página: ${lista.length} (Originais: ${totalOriginal}, Bundles: ${totalBundle})`);
+      return lista;
+    }, categoria);
+
+    // Filtrar duplicatas baseado no Python
+    const idsExistentes = new Set(
+      produtosExistentes
+        .filter(p => p.product_id)
+        .map(p => p.product_id)
+    );
+    
+    const hrefsExistentes = new Set(
+      produtosExistentes
+        .filter(p => p.href)
+        .map(p => p.href)
+    );
+
+    const produtosFiltrados = produtos.filter(produto => {
+      if (produto.product_id && idsExistentes.has(produto.product_id)) {
+        return false;
+      }
+      if (produto.href && hrefsExistentes.has(produto.href)) {
+        return false;
+      }
+      return true;
+    });
+
+    // logSucesso(`✔️ ${produtosFiltrados.length} produtos únicos extraídos da página ${pagina}.`);
+    return produtosFiltrados;
+
+  } catch (err) {
+    logErro(`Erro ao extrair produtos da página ${pagina}: ${err.message}`);
+    return [];
+  }
+}
+
 async function cleanupBrowser(browser) {
-    try {
-        if (!browser) {
-            return;
-        }
-
-        logInfo('🧹 Iniciando limpeza do browser...');
-
-        // Fechar todas as páginas abertas primeiro
-        try {
-            const pages = await browser.pages();
-            for (const page of pages) {
-                try {
-                    await page.close();
-                } catch (pageCloseError) {
-                    // Ignora erros ao fechar páginas individuais
-                }
-            }
-            logDebug('✅ Páginas fechadas');
-        } catch (pagesError) {
-            logErro(`⚠️ Erro ao fechar páginas: ${pagesError.message}`);
-        }
-        
-        // Aguardar um pouco para processos se organizarem
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Fechar o browser
-        try {
-            await browser.close();
-            logSucesso('✅ Browser fechado com sucesso');
-        } catch (browserCloseError) {
-            logErro(`⚠️ Erro ao fechar browser: ${browserCloseError.message}`);
-            
-            // Força encerramento em último caso (Windows)
-            try {
-                const { spawn } = require('child_process');
-                spawn('taskkill', ['/f', '/im', 'chrome.exe'], { stdio: 'ignore' });
-                logInfo('🔄 Forçado encerramento do Chrome');
-            } catch (killError) {
-                logErro(`⚠️ Erro ao forçar encerramento: ${killError.message}`);
-            }
-        }
-
-    } catch (error) {
-        logErro(`💥 Erro crítico na limpeza do browser: ${error.message}`);
+  try {
+    // Fechar todas as páginas abertas primeiro
+    const pages = await browser.pages();
+    for (const page of pages) {
+      try {
+        await page.close();
+      } catch (error) {
+        // Ignora erros ao fechar páginas individuais
+      }
     }
+    
+    // Aguardar um pouco para processos se organizarem
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Fechar o browser
+    await browser.close();
+  } catch (error) {
+    console.log('⚠️  Processo do browser finalizado externamente');
+    
+    // Força encerramento em último caso (Windows)
+    try {
+      const { spawn } = require('child_process');
+      spawn('taskkill', ['/f', '/im', 'chrome.exe'], { stdio: 'ignore' });
+    } catch (killError) {
+      // Ignora erro se não conseguir forçar encerramento
+    }
+  }
 }
+
+export async function extractProductDetails(browser, produto) {
+  try {
+    // Usar product_id se disponível, senão extrair da URL
+    let productId = produto.product_id;
+    let urlProduto = produto.url || produto.href;
+    
+    if (!productId) {
+      const productIdMatch = urlProduto.match(/\/item\/(\d+)\.html/);
+      if (!productIdMatch) {
+        logErro(`URL inválida para extração de product_id: ${urlProduto}`);
+        return { vendedor: '', peso: '', frete: '' };
+      }
+      productId = productIdMatch[1];
+    }
+    
+    // Garantir URL padrão
+    if (!urlProduto.startsWith('https://pt.aliexpress.com/item/')) {
+      urlProduto = `https://pt.aliexpress.com/item/${productId}.html`;
+    }
+    
+    // logInfo(`🔍 Acessando PDP direta: ${urlProduto}`);
+    
+    const novaAba = await browser.newPage();
+    
+    let dadosAPI = null;
+    
+    // Interceptar resposta da API antes de navegar
+    novaAba.on('response', async (response) => {
+      if (response.url().includes('mtop.aliexpress.pdp.pc.query') && response.status() === 200) {
+        try {
+          const rawText = await response.text();
+          // logInfo(`📡 Raw response recebida: ${rawText.substring(0, 100)}...`);
+          
+          // Múltiplas tentativas de limpeza do wrapper JSONP
+          let cleanText = rawText;
+          
+          // Método 1: Remover wrapper mtopjsonp padrão
+          cleanText = cleanText.replace(/^mtopjsonp\d*\(/, '').replace(/\)\s*$/, '');
+          
+          // Método 2: Se ainda tem caracteres estranhos no início, tentar encontrar o {
+          const firstBrace = cleanText.indexOf('{');
+          if (firstBrace > 0) {
+            cleanText = cleanText.substring(firstBrace);
+          }
+          
+          // Método 3: Se ainda tem caracteres no final, encontrar o último }
+          const lastBrace = cleanText.lastIndexOf('}');
+          if (lastBrace > 0 && lastBrace < cleanText.length - 1) {
+            cleanText = cleanText.substring(0, lastBrace + 1);
+          }
+          
+          // logInfo(`📡 JSON limpo: ${cleanText.substring(0, 100)}...`);
+          
+          const jsonData = JSON.parse(cleanText);
+          dadosAPI = jsonData?.data?.result || {};
+          logSucesso(`✅ API interceptada com sucesso para produto ${productId}`);
+        } catch (e) {
+          logErro(`Erro ao processar JSON da API: ${e.message}`);
+          logErro(`Raw text: ${rawText.substring(0, 200)}...`);
+        }
+      }
+    });
+    
+    // Navegar para a página do produto
+    await novaAba.goto(urlProduto, { 
+      waitUntil: 'domcontentloaded', 
+      timeout: 40000 
+    });
+    
+    // Aguardar um pouco para garantir que a API foi chamada
+    await delay(3000);
+    
+    let detalhes = { vendedor: '', peso: '', frete: '', reviews: 0, rating: 0, vendas: 0 };
+    
+    if (dadosAPI) {
+      // Parse dos dados da API seguindo a lógica do Python
+      detalhes = parseProductJson(dadosAPI, productId);
+    } else {
+      // Fallback: tentar extrair dados do DOM
+      logInfo(`⚠️ API não interceptada, tentando fallback DOM para ${productId}`);
+      detalhes = await novaAba.evaluate(() => {
+        const getText = (selector) => document.querySelector(selector)?.innerText || '';
+        return {
+          vendedor: getText('.store-info .store-name, .shop-name'),
+          peso: getText('td:contains("Peso") + td'),
+          frete: getText('.dynamic-shipping'),
+          reviews: parseInt(getText('.reviews-num, .rating-num') || '0'),
+          rating: parseFloat(getText('.rating-value, .stars-rating') || '0'),
+          vendas: 0
+        };
+      });
+    }
+    
+    try {
+        await novaAba.close();
+    } catch (closeError) {
+        // Ignorar erros de fechamento da aba
+    }
+    return detalhes;
+
+  } catch (err) {
+    logErro(`Erro ao acessar detalhes do produto ${url}: ${err.message}`);
+    return { vendedor: '', peso: '', frete: '', reviews: 0, rating: 0, vendas: 0 };
+  }
+}
+
+// Função para fazer parse do JSON da API (adaptada do Python)
+function parseProductJson(data, productId) {
+  try {
+    const detalhes = {
+      vendedor: '',
+      peso: '',
+      frete: '',
+      reviews: 0,
+      rating: 0,
+      vendas: 0,
+      preco: 0,
+      imagens: '',
+      rastreamento: false,
+      custoFrete: 0,
+      tipoFrete: '',
+      tempoEntrega: 0,
+      avaliacaoVendedor: 0,
+      tempoAbertura: ''
+    };
+
+    // Título
+    const title = data?.GLOBAL_DATA?.globalData?.subject || '';
+    
+    // Preço
+    const priceStr = data?.PRICE?.targetSkuPriceInfo?.salePriceString || '';
+    if (priceStr) {
+      const priceMatch = priceStr.match(/R\$\s*([\d,.]+)/);
+      if (priceMatch) {
+        detalhes.preco = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+      }
+    }
+    
+    // Vendas
+    const otherText = data?.PC_RATING?.otherText || '';
+    if (otherText && otherText.includes('vendidos')) {
+      const salesMatch = otherText.match(/(\d+)/);
+      if (salesMatch) {
+        detalhes.vendas = parseInt(salesMatch[1]);
+      }
+    }
+    
+    // Imagens
+    const images = data?.HEADER_IMAGE_PC?.imagePathList || [];
+    detalhes.imagens = images.join(', ');
+    
+    // Reviews e Rating
+    const ratingInfo = data?.PC_RATING || {};
+    detalhes.reviews = parseInt(ratingInfo.totalValidNum || 0);
+    detalhes.rating = parseFloat(ratingInfo.rating || 0);
+    
+    // Informações de frete
+    const logisticsList = data?.SHIPPING?.originalLayoutResultList || [];
+    if (logisticsList.length > 0) {
+      const logistics = logisticsList[0]?.bizData || {};
+      const additionLayout = logisticsList[0]?.additionLayout || [];
+      
+      detalhes.custoFrete = parseFloat(logistics.displayAmount || 0);
+      detalhes.tipoFrete = logistics.deliveryOptionCode || '';
+      detalhes.tempoEntrega = parseFloat(logistics.guaranteedDeliveryTime || 0);
+      
+      // Rastreamento
+      if (additionLayout.length > 0) {
+        detalhes.rastreamento = additionLayout[0]?.content === 'Rastreamento Disponível';
+      }
+    }
+    
+    // Informações do vendedor
+    const supplier = data?.SHOP_CARD_PC || {};
+    detalhes.vendedor = supplier.storeName || '';
+    detalhes.avaliacaoVendedor = supplier.sellerPositiveRate ? (parseFloat(supplier.sellerPositiveRate) / 20) : 0;
+    detalhes.tempoAbertura = supplier.sellerInfo?.openTime || '';
+    
+    logSucesso(`✅ Parse completo do produto ${productId}`);
+    return detalhes;
+    
+  } catch (err) {
+    logErro(`Erro ao fazer parse do JSON: ${err.message}`);
+    return { vendedor: '', peso: '', frete: '', reviews: 0, rating: 0, vendas: 0 };
+  }
+}
+
+// Função filterAndAppendProduct removida - fluxo integrado diretamente no processCategory

@@ -9,7 +9,8 @@
     "scrape": "node main.js",
     "lint": "eslint . --ext .js",
     "format": "prettier --write .",
-    "test": "jest"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config=unitTests/jest.config.js",
+    "test:individual": "node --experimental-vm-modules"
   },
   "keywords": [
     "aliexpress",
