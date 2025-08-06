@@ -81,6 +81,7 @@ Thumbs.db
 
 # Debug files and screenshots
 scraper/debug_files/
+scraper/imgtemp/
 *.png
 *.jpg
 *.jpeg

@@ -66,7 +66,7 @@ const CONFIG_FILTROS = {
  *   console.log(`Produto aprovado com score ${resultado.aprovacao.scoreFinal}`);
  * }
  */
-export async function applyIntegratedFilters(produto, opcoes = {}) {
+export async function applyIntegratedFilters(produto, opcoes = {}, browser = null) {
   const configuracao = {
     forcarTodosFiltros: false,
     logDetalhado: false,
@@ -188,8 +188,13 @@ export async function applyIntegratedFilters(produto, opcoes = {}) {
     
     if (deveExecutarMargem) {
       try {
-        logInfo(`💰 Fase 3/3: Validando margem de lucro...`);
-        resultMargem = await validarMargemOtimizada(produto);
+        // Verificar se o browser foi fornecido para busca real no ML
+        if (!browser) {
+          logInfo(`⚠️ Browser não fornecido - usando dados simulados para margem`);
+        }
+        
+        logInfo(`💰 Fase 3/3: Validando margem de lucro com dados ${browser ? 'reais do ML' : 'simulados'}...`);
+        resultMargem = await validarMargemOtimizada(produto, browser);
         
         if (resultMargem) {
           resultado.filtros.margem = resultMargem;
@@ -753,7 +758,7 @@ export function calcularAprovacaoFinalSimples(scores) {
  *   callbackProgresso: (progresso) => console.log(`${progresso.porcentagem}% concluído`)
  * });
  */
-export async function processIntegratedFilters(produtos, opcoes = {}) {
+export async function processIntegratedFilters(produtos, opcoes = {}, browser = null) {
   const configuracao = {
     maxConcorrente: CONFIG_FILTROS.processamento.maxConcorrente,
     delayEntreLotes: CONFIG_FILTROS.processamento.delayEntreLotes,
@@ -807,7 +812,7 @@ export async function processIntegratedFilters(produtos, opcoes = {}) {
             
             const resultado = await applyIntegratedFilters(produto, {
               logDetalhado: configuracao.logDetalhado
-            });
+            }, browser);
             
             // Adicionar metadados de processamento
             resultado.metadados = {

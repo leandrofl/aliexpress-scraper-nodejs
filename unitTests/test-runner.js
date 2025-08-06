@@ -3,11 +3,8 @@
  * Executa todos os testes do projeto de forma organizada
  */
 
-import { executarTestes as testesQuantitativos } from './filters/quantitative.test.js';
-import { executarTestes as testesQualitativos } from './filters/qualitative.test.js';
-import { executarTestes as testesIntegrados } from './filters/integrated-filters.test.js';
+// Imports corrigidos - apenas arquivos que existem
 import { executarTestes as testesMargemValidacao } from './validation/margin-validator.test.js';
-import { executarTestes as testesConfigInteligente } from './core/config-intelligent.test.js';
 
 /**
  * Executa toda a suíte de testes
@@ -23,83 +20,37 @@ async function executarSuiteCompleta() {
     suites: []
   };
   
-  // 1. Testes de Filtros Quantitativos
-  console.log('\n📊 1. FILTROS QUANTITATIVOS');
-  console.log('-'.repeat(40));
-  const resultQuantitativos = testesQuantitativos();
-  resultadosGerais.suites.push({
-    nome: 'Filtros Quantitativos',
-    ...resultQuantitativos
-  });
-  
-  console.log(`✅ Passou: ${resultQuantitativos.passou}/${resultQuantitativos.total}`);
-  
-  // 2. Testes de Filtros Qualitativos
-  console.log('\n🎯 2. FILTROS QUALITATIVOS');
-  console.log('-'.repeat(40));
-  const resultQualitativos = testesQualitativos();
-  resultadosGerais.suites.push({
-    nome: 'Filtros Qualitativos',
-    ...resultQualitativos
-  });
-  
-  console.log(`✅ Passou: ${resultQualitativos.passou}/${resultQualitativos.total}`);
-  
-  // 3. Testes de Validação de Margem
-  console.log('\n💰 3. VALIDAÇÃO DE MARGEM');
+  // Apenas os testes que existem
+  console.log('\n💰 VALIDAÇÃO DE MARGEM');
   console.log('-'.repeat(40));
   const resultMargemValidacao = testesMargemValidacao();
   resultadosGerais.suites.push({
     nome: 'Validação de Margem',
-    ...resultMargemValidacao
+    total: resultMargemValidacao.total,
+    passou: resultMargemValidacao.passou,
+    falhou: resultMargemValidacao.falhou
   });
   
   console.log(`✅ Passou: ${resultMargemValidacao.passou}/${resultMargemValidacao.total}`);
   
-  // 4. Testes de Filtros Integrados
-  console.log('\n🔄 4. FILTROS INTEGRADOS');
-  console.log('-'.repeat(40));
-  const resultIntegrados = testesIntegrados();
-  resultadosGerais.suites.push({
-    nome: 'Filtros Integrados',
-    ...resultIntegrados
-  });
-  
-  console.log(`✅ Passou: ${resultIntegrados.passou}/${resultIntegrados.total}`);
-  
-  // 5. Testes de Configurações Inteligentes
-  console.log('\n⚙️ 5. CONFIGURAÇÕES INTELIGENTES');
-  console.log('-'.repeat(40));
-  const resultConfigInteligente = testesConfigInteligente();
-  resultadosGerais.suites.push({
-    nome: 'Configurações Inteligentes',
-    ...resultConfigInteligente
-  });
-  
-  console.log(`✅ Passou: ${resultConfigInteligente.passou}/${resultConfigInteligente.total}`);
-  
-  // Calcular totais gerais
-  resultadosGerais.total = resultadosGerais.suites.reduce((sum, suite) => sum + suite.total, 0);
-  resultadosGerais.passou = resultadosGerais.suites.reduce((sum, suite) => sum + suite.passou, 0);
-  resultadosGerais.falhou = resultadosGerais.suites.reduce((sum, suite) => sum + suite.falhou, 0);
+  // Atualizar totais gerais
+  resultadosGerais.total += resultMargemValidacao.total;
+  resultadosGerais.passou += resultMargemValidacao.passou;
+  resultadosGerais.falhou += resultMargemValidacao.falhou;
   
   // Resumo final
-  console.log('\n' + '='.repeat(60));
-  console.log('📋 RESUMO FINAL DA SUÍTE DE TESTES');
-  console.log('='.repeat(60));
+  console.log('\n' + '=' .repeat(60));
+  console.log('📋 RESUMO FINAL DOS TESTES');
+  console.log('=' .repeat(60));
+  console.log(`📊 Total de testes: ${resultadosGerais.total}`);
+  console.log(`✅ Passou: ${resultadosGerais.passou}`);
+  console.log(`❌ Falhou: ${resultadosGerais.falhou}`);
   
-  resultadosGerais.suites.forEach(suite => {
-    const status = suite.falhou === 0 ? '✅' : '⚠️';
-    const porcentagem = ((suite.passou / suite.total) * 100).toFixed(1);
-    console.log(`${status} ${suite.nome}: ${suite.passou}/${suite.total} (${porcentagem}%)`);
-  });
-  
-  console.log('-'.repeat(60));
-  const porcentagemGeral = ((resultadosGerais.passou / resultadosGerais.total) * 100).toFixed(1);
-  console.log(`🎯 TOTAL GERAL: ${resultadosGerais.passou}/${resultadosGerais.total} (${porcentagemGeral}%)`);
+  const taxaSucesso = (resultadosGerais.passou / resultadosGerais.total * 100).toFixed(1);
+  console.log(`📈 Taxa de sucesso: ${taxaSucesso}%`);
   
   if (resultadosGerais.falhou === 0) {
-    console.log('\n🎉 TODOS OS TESTES PASSARAM! Sistema pronto para produção.');
+    console.log('\n🎉 Todos os testes passaram com sucesso!');
   } else {
     console.log(`\n⚠️  ${resultadosGerais.falhou} teste(s) falharam. Revisar implementações.`);
   }
@@ -110,74 +61,54 @@ async function executarSuiteCompleta() {
 /**
  * Executa testes de uma suíte específica
  */
-async function executarSuiteEspecifica(nomesuíte) {
+async function executarSuiteEspecifica(nomeSuite) {
   const suites = {
-    'quantitativo': testesQuantitativos,
-    'qualitativo': testesQualitativos,
-    'margem': testesMargemValidacao,
-    'integrado': testesIntegrados,
-    'config': testesConfigInteligente
+    'margem': testesMargemValidacao
   };
   
-  const suite = suites[nomesuíte.toLowerCase()];
-  if (!suite) {
-    console.log(`❌ Suíte '${nomesuíte}' não encontrada.`);
+  if (!suites[nomeSuite]) {
+    console.error(`❌ Suíte '${nomeSuite}' não encontrada.`);
     console.log(`Suítes disponíveis: ${Object.keys(suites).join(', ')}`);
-    return;
+    return null;
   }
   
-  console.log(`🧪 Executando suíte: ${nomesuíte}`);
-  return suite();
+  console.log(`🧪 EXECUTANDO SUÍTE: ${nomeSuite.toUpperCase()}`);
+  console.log('=' .repeat(50));
+  
+  const resultado = suites[nomeSuite]();
+  
+  console.log(`\n📊 RESULTADO DA SUÍTE ${nomeSuite.toUpperCase()}:`);
+  console.log(`✅ Passou: ${resultado.passou}/${resultado.total}`);
+  
+  if (resultado.falhou > 0) {
+    console.log(`❌ Falhou: ${resultado.falhou}`);
+  }
+  
+  return resultado;
 }
 
 /**
- * Gerar relatório detalhado
+ * Função principal - detecta argumentos da linha de comando
  */
-function gerarRelatorioDetalhado(resultados) {
-  const relatorio = {
-    timestamp: new Date().toISOString(),
-    resumo: {
-      total: resultados.total,
-      passou: resultados.passou,
-      falhou: resultados.falhou,
-      sucesso: (resultados.passou / resultados.total * 100).toFixed(1) + '%'
-    },
-    suites: resultados.suites.map(suite => ({
-      nome: suite.nome,
-      total: suite.total,
-      passou: suite.passou,
-      falhou: suite.falhou,
-      sucesso: (suite.passou / suite.total * 100).toFixed(1) + '%',
-      testesFalharam: suite.testes
-        .filter(t => !t.passou)
-        .map(t => ({
-          nome: t.nome,
-          detalhes: t.detalhes
-        }))
-    }))
-  };
+async function main() {
+  const args = process.argv.slice(2);
   
-  return relatorio;
-}
-
-// Executar se chamado diretamente
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const argumento = process.argv[2];
-  
-  if (argumento) {
-    // Executar suíte específica
-    await executarSuiteEspecifica(argumento);
+  if (args.length === 0) {
+    // Executa suíte completa se nenhum argumento
+    await executarSuiteCompleta();
   } else {
-    // Executar suíte completa
-    const resultados = await executarSuiteCompleta();
-    
-    // Gerar relatório se solicitado
-    if (process.argv.includes('--relatorio')) {
-      const relatorio = gerarRelatorioDetalhado(resultados);
-      console.log('\n📄 RELATÓRIO DETALHADO:');
-      console.log(JSON.stringify(relatorio, null, 2));
-    }
+    // Executa suíte específica
+    const nomeSuite = args[0].toLowerCase();
+    await executarSuiteEspecifica(nomeSuite);
   }
 }
 
-export { executarSuiteCompleta, executarSuiteEspecifica, gerarRelatorioDetalhado };
+// Executar se chamado diretamente
+if (import.meta.url.startsWith('file:') && process.argv[1] && import.meta.url.includes(process.argv[1].replace(/\\/g, '/'))) {
+  main().catch(error => {
+    console.error('❌ Erro na execução dos testes:', error);
+    process.exit(1);
+  });
+}
+
+export { executarSuiteCompleta, executarSuiteEspecifica };

@@ -499,6 +499,24 @@ export const logErro = (msg, erro = null) => {
 };
 
 /**
+ * Log de aviso/warning
+ * @param {string} msg - Mensagem de aviso para logar
+ * @param {Object} [detalhes] - Detalhes adicionais opcional
+ */
+export const logAviso = (msg, detalhes = null) => {
+  try {
+    const timestamp = new Date().toISOString();
+    console.log(`⚠️ [${timestamp}] ${msg}`);
+    
+    if (detalhes) {
+      console.log(`📋 Detalhes:`, detalhes);
+    }
+  } catch (error) {
+    console.log(`⚠️ ${msg}`); // Fallback simples
+  }
+};
+
+/**
  * Captura screenshot da página atual e salva no diretório de debug
  * @description Gera screenshot com nome único baseado em categoria, página e timestamp
  * @param {Page} page - Instância do Puppeteer Page

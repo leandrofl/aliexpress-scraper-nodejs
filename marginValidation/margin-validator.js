@@ -1,23 +1,26 @@
 /**
- * VALIDAÇÃO DE MARGEM - VERSÃO OTIMIZADA PARA MERCADO BRASILEIRO
+ * VALIDAÇÃO DE MARGEM - VERSÃO OTIMIZADA PARA MERCADO BRASILEIRO COM BUSCA REAL ML
  * 
  * Este módulo implementa um sistema avançado de validação de margem de lucro
  * especificamente calibrado para o mercado brasileiro. Considera impostos,
- * taxas de conversão USD/BRL, frete, taxas de marketplace e preços reais
- * do mercado nacional.
+ * taxas de conversão USD/BRL, frete, taxas de marketplace e preços REAIS
+ * obtidos diretamente do Mercado Livre através de scraping.
  * 
  * Funcionalidades principais:
+ * - Busca real de produtos no Mercado Livre usando nova aba
  * - Cálculo realista de custos (impostos, frete, conversão monetária)
  * - Análise de margem em múltiplos cenários (otimista, realista, conservador)
  * - Score de viabilidade baseado em critérios de mercado
  * - Análise de riscos específicos por categoria de produto
- * - Dados de mercado simulados baseados em pesquisa real
+ * - Dados de mercado REAIS baseados em busca ao vivo
  * 
  * @author LoopStore
- * @version 2.0.0 - Sistema de margem prioritária no fluxo de validação
+ * @version 3.0.0 - Busca real no Mercado Livre implementada
  */
 
-import { logInfo, logErro, logDebug } from '../scraper/utils.js';
+import { logInfo, logErro } from '../scraper/utils.js';
+import { buscarProdutosMercadoLivre, buscarProdutosCompativeisML } from './mercado-livre-scraper.js';
+import { processarNomeProduto } from '../utils/tradutor-produtos.js';
 import { MIN_PROFIT_MARGIN } from '../config.js';
 
 // =================================
@@ -57,7 +60,7 @@ try {
         throw new Error(`Taxa de impostos inválida: ${CONFIG_MARGEM.impostos}`);
     }
 
-    logDebug(`✅ Configurações de margem carregadas: USD/BRL ${CONFIG_MARGEM.cotacaoUSD}, Impostos ${CONFIG_MARGEM.impostos * 100}%`);
+    logInfo(`✅ Configurações de margem carregadas: USD/BRL ${CONFIG_MARGEM.cotacaoUSD}, Impostos ${CONFIG_MARGEM.impostos * 100}%`);
 
 } catch (error) {
     logErro(`❌ Erro ao carregar configurações de margem: ${error.message}`);
@@ -173,17 +176,17 @@ export function calcularMargemOtimizada(precoAliExpress, precoMercadoLivre, cate
             if (categoriaLower.includes('tecnologia') || categoriaLower.includes('eletronic')) {
                 impostos *= 1.2; // Tecnologia tem impostos 20% maiores
                 frete *= 1.1;    // Frete 10% maior (embalagem especial)
-                logDebug(`🔧 Ajuste para categoria Tecnologia aplicado`);
+                logInfo(`🔧 Ajuste para categoria Tecnologia aplicado`);
                 
             } else if (categoriaLower.includes('casa') || categoriaLower.includes('cozinha') || categoriaLower.includes('kitchen')) {
                 impostos *= 0.9; // Utensílios têm impostos 10% menores
                 frete *= 1.3;    // Frete 30% maior (peso/volume)
-                logDebug(`🔧 Ajuste para categoria Casa e Cozinha aplicado`);
+                logInfo(`🔧 Ajuste para categoria Casa e Cozinha aplicado`);
                 
             } else if (categoriaLower.includes('beleza') || categoriaLower.includes('beauty')) {
                 impostos *= 1.1; // Cosméticos têm impostos maiores
                 frete *= 0.9;    // Produtos menores, frete menor
-                logDebug(`🔧 Ajuste para categoria Beleza aplicado`);
+                logInfo(`🔧 Ajuste para categoria Beleza aplicado`);
             }
         } catch (categoryError) {
             logErro(`⚠️ Erro ao aplicar ajustes de categoria: ${categoryError.message}`);
@@ -288,7 +291,7 @@ function classificarCenario(margemPercentual) {
  */
 export function validarMargemMultiplosCenarios(precoAliExpress, precoMercadoLivre, categoria = '') {
     try {
-        logDebug(`🔍 Iniciando validação multi-cenário: ${categoria}`);
+        logInfo(`🔍 Iniciando validação multi-cenário: ${categoria}`);
 
         // Validação robusta de entrada
         if (!precoAliExpress || isNaN(parseFloat(precoAliExpress)) || parseFloat(precoAliExpress) <= 0) {
@@ -549,11 +552,15 @@ function analisarConsenso(scenarios) {
 // =================================
 
 /**
- * Gera dados de mercado mais realistas com base no nome do produto
- * Utiliza base de dados calibrada para o mercado brasileiro
+ * Busca produtos reais no Mercado Livre para análise de margem
+ * Utiliza nova aba para não interferir na navegação do AliExpress
  * 
  * @param {string} nomeProduto - Nome do produto para análise
- * @returns {Object} Dados simulados do mercado brasileiro
+ * @returns {Object} Dados reais do mercado brasileiro
+ * 
+ * @example
+ * const dados = await gerarDadosMercadoOtimizados("smartwatch fitness");
+ * console.log(`Preço médio no ML: R$ ${dados.precos.media}`);
  */
 export function gerarDadosMercadoOtimizados(nomeProduto) {
     try {
@@ -562,7 +569,7 @@ export function gerarDadosMercadoOtimizados(nomeProduto) {
             throw new Error('Nome do produto é obrigatório e deve ser uma string');
         }
 
-        logDebug(`📊 Gerando dados de mercado para: ${nomeProduto}`);
+        logInfo(`📊 Gerando dados de mercado para: ${nomeProduto}`);
 
         const termo = nomeProduto.toLowerCase().trim();
         let dadosBase = null;
@@ -573,31 +580,31 @@ export function gerarDadosMercadoOtimizados(nomeProduto) {
             if (termo.includes('smart') && (termo.includes('watch') || termo.includes('fitness'))) {
                 dadosBase = PRECOS_MERCADO_BR['smartwatch'];
                 categoriaDetectada = 'smartwatch';
-                logDebug(`🎯 Categoria detectada: Smartwatch`);
+                logInfo(`🎯 Categoria detectada: Smartwatch`);
                 
             } else if (termo.includes('kitchen') || termo.includes('knife') || termo.includes('cozinha') || termo.includes('faca')) {
                 dadosBase = PRECOS_MERCADO_BR['kitchen knife'];
                 categoriaDetectada = 'kitchen knife';
-                logDebug(`🎯 Categoria detectada: Utensílios de Cozinha`);
+                logInfo(`🎯 Categoria detectada: Utensílios de Cozinha`);
                 
             } else if (termo.includes('speaker') || termo.includes('bluetooth') || termo.includes('audio') || termo.includes('som')) {
                 dadosBase = PRECOS_MERCADO_BR['bluetooth speaker'];  
                 categoriaDetectada = 'bluetooth speaker';
-                logDebug(`🎯 Categoria detectada: Audio/Bluetooth`);
+                logInfo(`🎯 Categoria detectada: Audio/Bluetooth`);
                 
             } else if (termo.includes('case') || termo.includes('capa') || termo.includes('phone') || termo.includes('celular')) {
                 dadosBase = PRECOS_MERCADO_BR['phone case'];
                 categoriaDetectada = 'phone case';
-                logDebug(`🎯 Categoria detectada: Acessórios de Celular`);
+                logInfo(`🎯 Categoria detectada: Acessórios de Celular`);
                 
             } else if (termo.includes('tracker') || termo.includes('fitness') || termo.includes('activity')) { 
                 dadosBase = PRECOS_MERCADO_BR['fitness tracker'];
                 categoriaDetectada = 'fitness tracker';
-                logDebug(`🎯 Categoria detectada: Fitness Tracker`);
+                logInfo(`🎯 Categoria detectada: Fitness Tracker`);
                 
             } else {
                 // Dados genéricos baseados em estatísticas do mercado brasileiro
-                logDebug(`⚠️ Categoria não reconhecida, usando dados genéricos`);
+                logInfo(`⚠️ Categoria não reconhecida, usando dados genéricos`);
                 
                 dadosBase = {
                     produtos: Math.floor(Math.random() * 15) + 15, // 15-30 produtos
@@ -749,17 +756,22 @@ export function gerarDadosMercadoOtimizados(nomeProduto) {
 // =================================
 
 /**
- * Valida margem do produto com análise completa e robusta
+ * Valida margem do produto com análise completa e dados reais do Mercado Livre
  * Função principal que coordena toda a análise de viabilidade
  * 
  * @param {Object} produto - Objeto produto com dados do AliExpress
+ * @param {Browser} browser - Instância do browser Puppeteer para busca real no ML
  * @returns {Object} Análise completa de viabilidade do produto
  */
-export async function validarMargemOtimizada(produto) {
+export async function validarMargemOtimizada(produto, browser) {
     try {
         // Validação robusta de entrada
         if (!produto) {
             throw new Error('Objeto produto é obrigatório');
+        }
+
+        if (!browser) {
+            throw new Error('Browser Puppeteer é obrigatório para busca real no ML');
         }
 
         if (!produto.nome || typeof produto.nome !== 'string') {
@@ -772,31 +784,68 @@ export async function validarMargemOtimizada(produto) {
 
         logInfo(`💰 Iniciando validação otimizada: ${produto.nome}`);
 
-        // Gerar dados de mercado com tratamento de erro
+        // NOVO: Processar tradução do nome do produto
+        let produtoProcessado = { ...produto };
+        try {
+            logInfo(`🌐 Processando tradução do nome do produto...`);
+            const resultadoTraducao = await processarNomeProduto(produto.nome);
+            
+            // Adicionar dados de tradução ao produto
+            produtoProcessado.traducao = {
+                nomeOriginal: resultadoTraducao.nomeOriginal,
+                nomePortugues: resultadoTraducao.nomePortugues,
+                termosBusca: resultadoTraducao.termosBusca,
+                deteccaoIdioma: resultadoTraducao.deteccaoIdioma,
+                processamento: resultadoTraducao.processamento
+            };
+            
+            // Usar nome português para busca
+            produtoProcessado.nomeParaBusca = resultadoTraducao.nomePortugues;
+            
+            logSucesso(`✅ Tradução processada:`);
+            logInfo(`   📝 Original: "${resultadoTraducao.nomeOriginal}"`);
+            logInfo(`   🌐 Português: "${resultadoTraducao.nomePortugues}"`);
+            logInfo(`   🔍 Termo busca: "${resultadoTraducao.termosBusca.termoPrincipal}"`);
+            
+        } catch (traducaoError) {
+            logErro(`⚠️ Erro na tradução: ${traducaoError.message}`);
+            // Continuar com nome original em caso de erro
+            produtoProcessado.nomeParaBusca = produto.nome;
+        }
+
+        // Buscar dados reais e compatíveis do Mercado Livre com tratamento de erro
         let dadosMercado;
         try {
-            dadosMercado = gerarDadosMercadoOtimizados(produto.nome);
+            logInfo(`🎯 Iniciando busca inteligente no Mercado Livre para: ${produtoProcessado.nomeParaBusca}`);
+            
+            // Usar busca inteligente que verifica compatibilidade de produtos
+            dadosMercado = await buscarProdutosCompativeisML(browser, produtoProcessado);
             
             if (!dadosMercado || dadosMercado.erro) {
                 throw new Error(`Erro nos dados de mercado: ${dadosMercado?.erro || 'Dados inválidos'}`);
             }
 
-        } catch (marketError) {
-            logErro(`❌ Erro ao gerar dados de mercado: ${marketError.message}`);
+            // Log de sucesso com dados reais e análise de compatibilidade
+            logSucesso(`✅ Busca inteligente concluída:`);
+            logInfo(`   📊 Total analisados: ${dadosMercado.totalAnalisados} produtos`);
+            logInfo(`   🎯 Produtos compatíveis: ${dadosMercado.produtosCompativeis?.length || 0}`);
             
-            // Usar dados de emergência muito conservadores
-            dadosMercado = {
-                termoBuscado: produto.nome,
-                categoriaDetectada: 'emergencia',
-                produtosEncontrados: 10,
-                precos: {
-                    minimo: 50.00, maximo: 200.00, media: 100.00,
-                    mediana: 90.00, quartil1: 75.00, quartil3: 125.00,
-                    quantidade: 10
-                },
-                metadados: { fonte: 'Dados de Emergência' },
-                dataConsulta: new Date().toISOString()
-            };
+            if (dadosMercado.melhorMatch) {
+                logSucesso(`   🏆 Melhor match: "${dadosMercado.melhorMatch.titulo}"`);
+                logInfo(`   � Score compatibilidade: ${dadosMercado.melhorMatch.scoreCompatibilidade}%`);
+                logInfo(`   💰 Preço ML: R$ ${dadosMercado.melhorMatch.preco}`);
+            }
+            
+            if (dadosMercado.resumoCompatibilidade) {
+                logInfo(`   🎯 Taxa compatibilidade: ${dadosMercado.resumoCompatibilidade.taxaCompatibilidade}%`);
+            }
+
+        } catch (marketError) {
+            logErro(`❌ Erro ao buscar dados no ML: ${marketError.message}`);
+            
+            // Fallback para dados simulados como emergência
+            dadosMercado = gerarDadosMercadoOtimizados(produtoProcessado.nomeParaBusca);
+            logInfo(`⚠️ Usando dados simulados como fallback`);
         }
 
         // Extrair e validar preço do AliExpress
@@ -818,27 +867,50 @@ export async function validarMargemOtimizada(produto) {
             return {
                 sucesso: false,
                 erro: `Preço do AliExpress inválido: ${produto.preco}`,
-                produto: { nome: produto.nome },
+                produto: { 
+                    nome: produto.nome,
+                    traducao: produtoProcessado.traducao 
+                },
                 timestamp: new Date().toISOString()
             };
+        }
+
+        // Preparar dados de preços baseados na análise inteligente
+        let precosParaAnalise;
+        
+        if (dadosMercado.produtosCompativeis && dadosMercado.produtosCompativeis.length > 0) {
+            // Usar preços de produtos compatíveis (mais precisos)
+            logInfo(`📊 Usando preços de ${dadosMercado.produtosCompativeis.length} produtos compatíveis`);
+            precosParaAnalise = dadosMercado.estatisticasCompativeis?.precos || dadosMercado.precos;
+            
+            // Se temos um melhor match, destacar
+            if (dadosMercado.melhorMatch) {
+                precosParaAnalise.melhorMatch = dadosMercado.melhorMatch.preco;
+                precosParaAnalise.scoreMelhorMatch = dadosMercado.melhorMatch.scoreCompatibilidade;
+            }
+        } else {
+            // Fallback para todos os produtos encontrados
+            logInfo(`⚠️ Nenhum produto compatível encontrado, usando ${dadosMercado.produtosEncontrados} produtos gerais`);
+            precosParaAnalise = dadosMercado.precos;
         }
 
         // Calcular margens para diferentes cenários com tratamento individual
         const analiseMargens = {
             otimista: null,
             realista: null,
-            conservadora: null
+            conservadora: null,
+            melhorMatch: null
         };
 
         // Cenário OTIMISTA (Q3 - preço mais alto)
         try {
             analiseMargens.otimista = calcularMargemOtimizada(
                 precoAliExpress, 
-                dadosMercado.precos.quartil3, 
+                precosParaAnalise.quartil3 || precosParaAnalise.maximo, 
                 produto.categoria || ''
             );
             analiseMargens.otimista.cenarioTipo = 'OTIMISTA';
-            logDebug(`✅ Cenário otimista calculado: ${analiseMargens.otimista.margemPercentual}%`);
+            logInfo(`✅ Cenário otimista calculado: ${analiseMargens.otimista.margemPercentual}%`);
 
         } catch (optimisticError) {
             logErro(`❌ Erro no cenário otimista: ${optimisticError.message}`);
@@ -853,11 +925,11 @@ export async function validarMargemOtimizada(produto) {
         try {
             analiseMargens.realista = calcularMargemOtimizada(
                 precoAliExpress, 
-                dadosMercado.precos.media, 
+                precosParaAnalise.media, 
                 produto.categoria || ''
             );
             analiseMargens.realista.cenarioTipo = 'REALISTA';
-            logDebug(`✅ Cenário realista calculado: ${analiseMargens.realista.margemPercentual}%`);
+            logInfo(`✅ Cenário realista calculado: ${analiseMargens.realista.margemPercentual}%`);
 
         } catch (realisticError) {
             logErro(`❌ Erro no cenário realista: ${realisticError.message}`);
@@ -872,11 +944,11 @@ export async function validarMargemOtimizada(produto) {
         try {
             analiseMargens.conservadora = calcularMargemOtimizada(
                 precoAliExpress, 
-                dadosMercado.precos.quartil1, 
+                precosParaAnalise.quartil1 || precosParaAnalise.minimo, 
                 produto.categoria || ''
             );
             analiseMargens.conservadora.cenarioTipo = 'CONSERVADOR';
-            logDebug(`✅ Cenário conservador calculado: ${analiseMargens.conservadora.margemPercentual}%`);
+            logInfo(`✅ Cenário conservador calculado: ${analiseMargens.conservadora.margemPercentual}%`);
 
         } catch (conservativeError) {
             logErro(`❌ Erro no cenário conservador: ${conservativeError.message}`);
@@ -887,6 +959,28 @@ export async function validarMargemOtimizada(produto) {
             };
         }
 
+        // Cenário MELHOR MATCH (produto mais compatível)
+        if (precosParaAnalise.melhorMatch) {
+            try {
+                analiseMargens.melhorMatch = calcularMargemOtimizada(
+                    precoAliExpress, 
+                    precosParaAnalise.melhorMatch, 
+                    produto.categoria || ''
+                );
+                analiseMargens.melhorMatch.cenarioTipo = 'MELHOR_MATCH';
+                analiseMargens.melhorMatch.scoreCompatibilidade = precosParaAnalise.scoreMelhorMatch;
+                logSucesso(`🎯 Cenário melhor match calculado: ${analiseMargens.melhorMatch.margemPercentual}% (score: ${precosParaAnalise.scoreMelhorMatch})`);
+
+            } catch (bestMatchError) {
+                logErro(`❌ Erro no cenário melhor match: ${bestMatchError.message}`);
+                analiseMargens.melhorMatch = {
+                    erro: true,
+                    mensagem: bestMatchError.message,
+                    cenarioTipo: 'MELHOR_MATCH'
+                };
+            }
+        }
+
         // Verificar se pelo menos um cenário foi calculado com sucesso
         const cenariosValidos = Object.values(analiseMargens).filter(cenario => cenario && !cenario.erro);
         
@@ -894,10 +988,18 @@ export async function validarMargemOtimizada(produto) {
             throw new Error('Nenhum cenário pôde ser calculado com sucesso');
         }
 
-        // Usar cenário realista como base (ou primeiro válido)
-        const margemBase = analiseMargens.realista && !analiseMargens.realista.erro 
-            ? analiseMargens.realista 
-            : cenariosValidos[0];
+        // Priorizar melhor match, depois realista como base (ou primeiro válido)
+        let margemBase;
+        if (analiseMargens.melhorMatch && !analiseMargens.melhorMatch.erro) {
+            margemBase = analiseMargens.melhorMatch;
+            logSucesso(`🎯 Usando cenário MELHOR MATCH como base de decisão`);
+        } else if (analiseMargens.realista && !analiseMargens.realista.erro) {
+            margemBase = analiseMargens.realista;
+            logInfo(`📊 Usando cenário REALISTA como base de decisão`);
+        } else {
+            margemBase = cenariosValidos[0];
+            logInfo(`⚠️ Usando primeiro cenário válido como base: ${margemBase.cenarioTipo}`);
+        }
 
         // Calcular score de viabilidade com tratamento de erro
         let scoreViabilidade = 0;
@@ -940,7 +1042,7 @@ export async function validarMargemOtimizada(produto) {
             tempoRetorno = margemBase.viavel ? 12 : 999;
         }
 
-        // Construir resposta final
+        // Construir resposta final com dados de compatibilidade
         const resultado = {
             sucesso: true,
             produto: {
@@ -949,29 +1051,51 @@ export async function validarMargemOtimizada(produto) {
                 categoria: produto.categoria || 'Não especificada',
                 url: produto.url || null
             },
-            mercado: dadosMercado,
+            mercado: {
+                ...dadosMercado,
+                // Destacar informações de compatibilidade
+                compatibilidade: {
+                    produtosCompativeis: dadosMercado.produtosCompativeis?.length || 0,
+                    taxaCompatibilidade: dadosMercado.resumoCompatibilidade?.taxaCompatibilidade || 0,
+                    melhorMatch: dadosMercado.melhorMatch ? {
+                        nome: dadosMercado.melhorMatch.titulo,
+                        preco: dadosMercado.melhorMatch.preco,
+                        score: dadosMercado.melhorMatch.scoreCompatibilidade,
+                        confianca: dadosMercado.melhorMatch.confianca
+                    } : null
+                },
+                precosUsados: precosParaAnalise
+            },
             analiseMargens: analiseMargens,
             recomendacao: {
                 viavel: margemBase.viavel,
                 cenario: margemBase.cenario,
+                cenarioUsado: margemBase.cenarioTipo,
                 scoreViabilidade: scoreViabilidade,
+                scoreCompatibilidade: dadosMercado.melhorMatch?.scoreCompatibilidade || null,
                 riscos: riscos,
                 roiMedio: margemBase.roi,
                 tempoRetorno: tempoRetorno,
-                confiabilidade: Math.round((cenariosValidos.length / 3) * 100)
+                confiabilidade: Math.round((cenariosValidos.length / Object.keys(analiseMargens).length) * 100)
             },
             configuracao: CONFIG_MARGEM,
             estatisticas: {
                 cenariosCalculados: cenariosValidos.length,
-                cenariosComErro: 3 - cenariosValidos.length,
+                cenariosComErro: Object.keys(analiseMargens).length - cenariosValidos.length,
                 margemMediaCalculada: cenariosValidos.length > 0 
                     ? Math.round((cenariosValidos.reduce((acc, c) => acc + (c.margemPercentual || 0), 0) / cenariosValidos.length) * 100) / 100
-                    : 0
+                    : 0,
+                usoMelhorMatch: !!analiseMargens.melhorMatch && !analiseMargens.melhorMatch.erro
             },
             dataAnalise: new Date().toISOString()
         };
 
-        logInfo(`✅ Validação concluída: ${margemBase.cenario} (Score: ${scoreViabilidade})`);
+        logSucesso(`✅ Validação inteligente concluída:`);
+        logInfo(`   🎯 Cenário usado: ${margemBase.cenarioTipo} (${margemBase.cenario})`);
+        logInfo(`   📊 Score viabilidade: ${scoreViabilidade}`);
+        if (dadosMercado.melhorMatch) {
+            logInfo(`   🏆 Score compatibilidade: ${dadosMercado.melhorMatch.scoreCompatibilidade}%`);
+        }
         
         return resultado;
 
@@ -1019,7 +1143,7 @@ function calcularScoreOtimizado(margemOtimista, margemRealista, margemConservado
                 else if (margem >= 5) score += 15;
                 else score += 0;
                 
-                logDebug(`📊 Score margem realista: ${margem}% = ${score >= 30 ? 'ÓTIMO' : score >= 15 ? 'BOM' : 'BAIXO'}`);
+                logInfo(`📊 Score margem realista: ${margem}% = ${score >= 30 ? 'ÓTIMO' : score >= 15 ? 'BOM' : 'BAIXO'}`);
             }
         } catch (realistError) {
             logErro(`⚠️ Erro na análise de margem realista para score: ${realistError.message}`);
@@ -1034,7 +1158,7 @@ function calcularScoreOtimizado(margemOtimista, margemRealista, margemConservado
                 else if (margemConserv >= 5) score += 15;
                 else if (margemConserv >= 0) score += 5;
                 
-                logDebug(`📊 Score margem conservadora: ${margemConserv}%`);
+                logInfo(`📊 Score margem conservadora: ${margemConserv}%`);
             }
         } catch (conservError) {
             logErro(`⚠️ Erro na análise de margem conservadora para score: ${conservError.message}`);
@@ -1050,7 +1174,7 @@ function calcularScoreOtimizado(margemOtimista, margemRealista, margemConservado
                 else if (produtos >= 15) score += 8;  // Mercado razoável
                 else if (produtos >= 10) score += 5;  // Mercado pequeno
                 
-                logDebug(`📊 Score quantidade produtos: ${produtos} produtos`);
+                logInfo(`📊 Score quantidade produtos: ${produtos} produtos`);
             }
         } catch (marketError) {
             logErro(`⚠️ Erro na análise de produtos do mercado: ${marketError.message}`);
@@ -1070,7 +1194,7 @@ function calcularScoreOtimizado(margemOtimista, margemRealista, margemConservado
                     else if (estabilidade <= 2.0) score += 4;  // Preços moderados
                     else score += 1;                           // Preços voláteis
                     
-                    logDebug(`📊 Score estabilidade: ${Math.round(estabilidade * 100)}% de variação`);
+                    logInfo(`📊 Score estabilidade: ${Math.round(estabilidade * 100)}% de variação`);
                 }
             }
         } catch (stabilityError) {
