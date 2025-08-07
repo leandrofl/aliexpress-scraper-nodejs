@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS produtos (
   status text DEFAULT 'coletado' CHECK (status IN ('coletado', 'analisado', 'testado', 'aprovado', 'listado', 'reprovado')),
   hash_duplicidade text UNIQUE, -- Sistema anti-duplicidade
   
+  -- 🎯 Campos de fallback textual (implementando sugestão ChatGPT)
+  imagem_comparada boolean DEFAULT true,
+  fonte_de_verificacao text DEFAULT 'imagem' CHECK (fonte_de_verificacao IN ('imagem', 'texto', 'erro')),
+  risco_imagem boolean DEFAULT false,
+  compatibilidade_textual jsonb, -- Dados da análise de compatibilidade textual
+  ratio_preco numeric(5,2), -- Razão entre preço ML e AliExpress
+  
   -- ⏰ Timestamps
   primeira_coleta_em timestamptz DEFAULT now(),
   ultima_analise_em timestamptz DEFAULT now(),
@@ -266,6 +273,25 @@ SELECT
 FROM campanhas c
 LEFT JOIN produtos p ON c.produto_id = p.id
 GROUP BY c.tenant_id, c.plataforma, c.status, p.categoria;
+
+-- View: Produtos com risco de imagem (implementando sugestão ChatGPT)
+CREATE OR REPLACE VIEW vw_produtos_risco_imagem AS
+SELECT 
+    tenant_id,
+    nome,
+    categoria,
+    preco_aliexpress,
+    score_total,
+    fonte_de_verificacao,
+    risco_imagem,
+    compatibilidade_textual,
+    ratio_preco,
+    dados_ml,
+    criado_em,
+    status
+FROM produtos 
+WHERE risco_imagem = true OR fonte_de_verificacao = 'texto'
+ORDER BY score_total DESC, criado_em DESC;
 
 -- ===============================================
 -- 🧪 DADOS DE TESTE (OPCIONAL)

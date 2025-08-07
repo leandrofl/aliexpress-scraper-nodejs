@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS produtos (
   score_total integer DEFAULT 0,
   score_categoria text DEFAULT 'bronze',
   status text DEFAULT 'novo',
+  -- Novos campos para fallback textual (sugestão ChatGPT)
+  imagem_comparada boolean DEFAULT true,
+  fonte_de_verificacao text DEFAULT 'imagem' CHECK (fonte_de_verificacao IN ('imagem', 'texto', 'erro')),
+  risco_imagem boolean DEFAULT false,
+  compatibilidade_textual jsonb,
+  ratio_preco numeric(5,2),
   criado_em timestamptz DEFAULT now(),
   atualizado_em timestamptz DEFAULT now()
 );

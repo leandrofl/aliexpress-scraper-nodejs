@@ -73,6 +73,13 @@ export async function salvarProdutoCompleto(produto, tenantId = null) {
             status: status,
             hash_duplicidade: hashDuplicidade,
             
+            // 🎯 Campos de fallback textual (sugestão ChatGPT)
+            imagem_comparada: produto.dadosMercadoLivre?.melhorMatch?.imagemComparada ?? true,
+            fonte_de_verificacao: produto.dadosMercadoLivre?.melhorMatch?.fonteDeVerificacao || 'imagem',
+            risco_imagem: produto.dadosMercadoLivre?.melhorMatch?.riscoImagem || false,
+            compatibilidade_textual: produto.dadosMercadoLivre?.melhorMatch?.compatibilidadeTextual || null,
+            ratio_preco: produto.dadosMercadoLivre?.melhorMatch?.ratioPreco || null,
+            
             // ⏰ Timestamps
             primeira_coleta_em: new Date().toISOString(),
             ultima_analise_em: new Date().toISOString()
@@ -418,5 +425,58 @@ export async function obterEstatisticasGerais() {
             scoreMedia: null,
             erro: error.message
         };
+    }
+}
+
+/**
+ * Obter produtos com risco de imagem para revisão manual
+ * @param {number} limite - Limite de produtos a retornar
+ * @param {string} tenantId - ID do tenant (opcional)
+ * @returns {Promise<Array>} Lista de produtos com risco
+ */
+export async function obterProdutosComRiscoImagem(limite = 50, tenantId = null) {
+    try {
+        // Por enquanto, vamos simular produtos com risco baseado em critérios básicos
+        // até que os novos campos sejam aplicados no banco Supabase
+        
+        let query = supabase
+            .from('produtos')
+            .select(`
+                nome,
+                preco_aliexpress,
+                preco_ml_medio,
+                url_aliexpress,
+                criado_em,
+                score_total,
+                status,
+                aprovado_final
+            `)
+            .order('score_total', { ascending: false })
+            .limit(limite);
+
+        if (tenantId) {
+            query = query.eq('tenant_id', tenantId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('❌ Erro ao obter produtos:', error.message);
+            return [];
+        }
+
+        // Simular produtos com "risco" - produtos não aprovados ou com problemas
+        const produtosComRisco = (data || []).filter(produto => 
+            !produto.aprovado_final || 
+            produto.status === 'coletado' || 
+            produto.status === 'analisado'
+        );
+
+        console.log(`📊 Encontrados ${produtosComRisco.length} produtos com potencial risco`);
+        return produtosComRisco;
+
+    } catch (error) {
+        console.error('❌ Erro ao buscar produtos com risco:', error.message);
+        return [];
     }
 }

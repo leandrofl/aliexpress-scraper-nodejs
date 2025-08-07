@@ -12,7 +12,7 @@ import axios from 'axios';
 import axiosRetry from 'axios-retry';
 import * as cheerio from 'cheerio';
 import { compararImagensPorHash } from '../utils/comparador-imagens.js';
-import { gerarTermosDeBusca } from '../utils/comparador-produtos.js';
+import { gerarTermosDeBusca, produtosSaoCompativeis } from '../utils/comparador-produtos.js';
 
 // 🛡 Melhoria 2: Configurar retry automático para falhas de rede
 axiosRetry(axios, {
@@ -61,7 +61,13 @@ export async function buscarMelhorProdutoML(produtoAli) {
     for (const item of itens) {
       try {
         const comp = await compararImagensPorHash(produtoAli.imagemURL, item.imagem);
-        const produtoComSimilaridade = { ...item, similaridade: comp.similaridade };
+        const produtoComSimilaridade = { 
+          ...item, 
+          similaridade: comp.similaridade,
+          imagemComparada: true,
+          fonteDeVerificacao: 'imagem',
+          riscoImagem: false
+        };
         
         // Adicionar ao array de top 3
         top3Produtos.push(produtoComSimilaridade);
@@ -73,7 +79,60 @@ export async function buscarMelhorProdutoML(produtoAli) {
       } catch (e) {
         console.warn('Erro na comparação de imagem:', e.message);
         // Adicionar mesmo sem comparação visual
-        top3Produtos.push({ ...item, similaridade: 0 });
+        top3Produtos.push({ 
+          ...item, 
+          similaridade: 0,
+          imagemComparada: false,
+          fonteDeVerificacao: 'erro',
+          riscoImagem: true
+        });
+      }
+    }
+
+    // 🎯 FALLBACK TEXTUAL - Sugestão do ChatGPT
+    // Se não encontrou match por imagem, tentar verificação textual
+    if (!melhorProduto && itens.length > 0) {
+      console.log('🔍 Nenhum match por imagem encontrado. Tentando fallback textual...');
+      
+      let melhorCompatibilidade = null;
+      let maiorScore = 0;
+
+      for (const item of itens) {
+        try {
+          // Verificar compatibilidade textual
+          const compatibilidade = produtosSaoCompativeis(produtoAli, {
+            nome: item.nome,
+            preco: item.preco
+          });
+
+          if (compatibilidade.compatível && compatibilidade.score >= 60) {
+            // Verificar se preço está em faixa segura (2x a 5x do preço original)
+            const ratioPreco = item.preco / produtoAli.preco;
+            
+            if (ratioPreco >= 2 && ratioPreco <= 5 && compatibilidade.score > maiorScore) {
+              maiorScore = compatibilidade.score;
+              melhorCompatibilidade = {
+                ...item,
+                similaridade: compatibilidade.score,
+                imagemComparada: false,
+                fonteDeVerificacao: 'texto',
+                riscoImagem: true,
+                compatibilidadeTextual: compatibilidade,
+                ratioPreco: ratioPreco
+              };
+            }
+          }
+        } catch (compatError) {
+          console.warn('Erro na verificação de compatibilidade:', compatError.message);
+        }
+      }
+
+      if (melhorCompatibilidade) {
+        melhorProduto = melhorCompatibilidade;
+        console.log(`✅ Fallback textual encontrou match: "${melhorProduto.nome}" (Score: ${maiorScore}%)`);
+        console.log(`⚠️ ATENÇÃO: Produto marcado com risco de imagem para revisão`);
+      } else {
+        console.log('❌ Nenhum produto compatível encontrado nem por imagem nem por texto');
       }
     }
 
