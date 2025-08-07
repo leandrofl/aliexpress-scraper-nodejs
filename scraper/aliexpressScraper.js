@@ -80,6 +80,13 @@ import {
 } from '../metrics/scraping-metrics.js';
 
 import {
+  salvarProdutoCompleto,
+  salvarMetricasSessao,
+  verificarDuplicidadeDB,
+  obterEstatisticasGerais
+} from '../database/database-integration.js';
+
+import {
   CATEGORIES,
   MAX_PRODUCTS_RAW,
   TARGET_PRODUCTS_FINAL,
@@ -614,6 +621,96 @@ export async function processCategory(browser, categoria) {
         
         // Finalizar métricas e gerar relatório
         const relatorioMetricas = await metricas.finalizar();
+        
+        // =================================
+        // FASE 6: PERSISTÊNCIA NO BANCO DE DADOS
+        // =================================
+        
+        logSucesso(`💾 FASE 6: Salvando dados no banco Supabase`);
+        
+        let produtosSalvos = 0;
+        let errosSalvamento = 0;
+        
+        // Salvar cada produto no banco
+        for (const produto of produtosOrdenados) {
+            try {
+                // Verificar se já existe (dupla verificação DB)
+                const existeNoDB = await verificarDuplicidadeDB(produto.id);
+                
+                if (existeNoDB) {
+                    logInfo(`⚠️ Produto ${produto.nome} já existe no banco - pulando`);
+                    continue;
+                }
+                
+                // Preparar dados para o banco
+                const dadosBanco = {
+                    product_id_aliexpress: produto.id,
+                    nome: produto.nome,
+                    categoria: categoria,
+                    preco_aliexpress: produto.preco,
+                    descricao: produto.descricao || '',
+                    url_imagem: produto.imagem,
+                    url_aliexpress: produto.url,
+                    avaliacoes: produto.avaliacoes || 0,
+                    rating: produto.rating || 0,
+                    vendidos: produto.vendidos || 0,
+                    shipping_info: produto.shipping || '',
+                    dados_ml: produto.dadosMercadoLivre || null,
+                    metricas_qualidade: {
+                        riskLevel: produto.riskLevel,
+                        qualitativeFilters: produto.qualitativeFilters,
+                        quantitativeFilters: produto.quantitativeFilters,
+                        marginValidation: produto.marginValidation
+                    },
+                    score_total: produto.scoreTotal || 0,
+                    score_categoria: produto.scoreCategoria || 'bronze',
+                    status: 'novo'
+                };
+                
+                const resultado = await salvarProdutoCompleto(dadosBanco);
+                
+                if (resultado.sucesso) {
+                    produtosSalvos++;
+                    logInfo(`✅ Produto ${produto.nome} salvo no banco`);
+                } else {
+                    errosSalvamento++;
+                    logErro(`❌ Erro ao salvar ${produto.nome}: ${resultado.erro}`);
+                }
+                
+                // Pequeno delay entre salvamentos
+                await delay(100);
+                
+            } catch (dbError) {
+                errosSalvamento++;
+                logErro(`💥 Erro no banco para ${produto.nome}: ${dbError.message}`);
+            }
+        }
+        
+        // Salvar métricas da sessão
+        try {
+            const metricasSessao = {
+                categoria: categoria,
+                total_produtos: todosProdutosColetados.length,
+                produtos_salvos: produtosSalvos,
+                produtos_duplicados: todosProdutosColetados.length - produtosFinal.length,
+                tempo_execucao: Math.round((Date.now() - sessionMetrics.inicioSessao) / 1000),
+                taxa_sucesso: produtosSalvos > 0 ? (produtosSalvos / produtosFinal.length) * 100 : 0,
+                configuracao_usada: {
+                    maxProdutos: MAX_PRODUCTS_RAW,
+                    maxPaginas: MAX_PAGES_PER_CATEGORY,
+                    filtrosAtivos: ['quantitativo', 'qualitativo', 'margem', 'duplicidade'],
+                    versaoScraper: '3.0.0'
+                }
+            };
+            
+            await salvarMetricasSessao(metricasSessao);
+            logSucesso(`📊 Métricas da sessão salvas no banco`);
+            
+        } catch (metricsError) {
+            logErro(`❌ Erro ao salvar métricas: ${metricsError.message}`);
+        }
+        
+        logSucesso(`💾 BANCO DE DADOS: ${produtosSalvos} produtos salvos, ${errosSalvamento} erros`);
         
         // =================================
         // RESULTADO FINAL

@@ -20,10 +20,34 @@ Sistema avançado de mineração de dados do AliExpress com validação intelige
 ├── 📁 scraper/           # Core scraping engine
 ├── 📁 filters/           # Product filtering system
 ├── 📁 marginValidation/  # ML price validation
+├── 📁 database/          # 🆕 Supabase integration & schemas
 ├── 📁 utils/             # Image comparison & translation
 ├── 📁 unitTests/         # Comprehensive test suite
 └── 📁 docs/              # Project documentation
 ```
+
+## 🆕 **Database Integration**
+
+Sistema completo de persistência com **Supabase PostgreSQL**:
+
+- 💾 **Salvamento automático** de todos os produtos
+- 📊 **Métricas detalhadas** de cada sessão
+- 🔍 **Verificação de duplicidade** no banco
+- 📈 **Dashboard em tempo real** via Supabase
+- 🛡️ **Row Level Security** para multi-tenant
+
+```bash
+# Configurar banco (primeira vez)
+npm run db:setup
+
+# Executar scraper com banco integrado
+npm run scrape:full
+
+# Ver estatísticas do banco
+npm run db:stats
+```
+
+📚 **Documentação completa**: [`/database/`](./database/)
 
 ## 🚀 Quick Start
 
