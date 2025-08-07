@@ -1,99 +1,108 @@
 
-# 📦 LoopStore Scraper – Node.js + Puppeteer Extra
+# � AliExpress Scraper - Sistema Completo de Análise de Produtos
 
-Este projeto realiza a mineração de produtos no AliExpress com:
+Sistema avançado de mineração de dados do AliExpress com validação inteligente de margem de lucro no Mercado Livre brasileiro.
 
-- Navegador automatizado (Puppeteer Extra + Stealth + Proxy)
-- Scroll dinâmico + evasão de fingerprint
-- Filtros quantitativos, qualitativos (placeholder) e risco
-- Exportação automática para Excel (`.xlsx`) via `exceljs`
-- Modularização e logs visuais profissionais
+## ✨ Principais Funcionalidades
 
----
+- 🕷️ **Web Scraping Stealth**: Puppeteer Extra com evasão de detecção
+- 🔍 **Comparação Visual**: Hash perceptual para matching de produtos
+- 🌍 **Tradução Inteligente**: Google Translate API para termos de busca
+- 📊 **Validação de Margem**: Análise real de preços do Mercado Livre
+- 🛡️ **Filtros Avançados**: Quantitativos, qualitativos e análise de risco
+- 📈 **Exportação Excel**: Relatórios completos via ExcelJS
+- 🎯 **ML Search**: Busca otimizada com axios/cheerio
 
-## 🚀 Como executar
+## 🏗️ Arquitetura do Sistema
 
-### 1. **Clone o projeto**
-
-```bash
-git clone https://github.com/seu-usuario/loopstore-scraper.git
-cd loopstore-scraper
+```
+📁 Project Structure
+├── 📁 scraper/           # Core scraping engine
+├── 📁 filters/           # Product filtering system
+├── 📁 marginValidation/  # ML price validation
+├── 📁 utils/             # Image comparison & translation
+├── 📁 unitTests/         # Comprehensive test suite
+└── 📁 docs/              # Project documentation
 ```
 
-### 2. **Instale as dependências**
+## 🚀 Quick Start
+
+### 1. **Clone e Install**
 
 ```bash
+git clone https://github.com/leandrofl/aliexpress-scraper-nodejs.git
+cd aliexpress-scraper-nodejs
 npm install
 ```
 
-> 🔐 Este projeto já usa bibliotecas seguras (`exceljs` no lugar de `xlsx`) e `puppeteer-extra` com stealth.
+### 2. **Configure Environment**
 
-### 3. **Configure o ambiente**
-
-Edite o arquivo `.env` com seus parâmetros (já incluído):
+Create `.env` file:
 
 ```env
-CATEGORIES=Casa & Cozinha,Tecnologia,Beleza
-MIN_SALES=500
-MIN_REVIEWS=50
-...
+# Google Translate API
+GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account.json
 
-CHROME_PATH=C:/Program Files/Google/Chrome/Application/chrome.exe
-HEADLESS=true
-ENABLE_SCREENSHOTS=false
-```
+# Scraping Configuration
+CATEGORIES=wireless headphones,smartphone cases,fitness tracker
+MIN_SALES=100
+MIN_REVIEWS=20
+MAX_PRODUCTS_RAW=50
+## 🧪 Testing & Quality
 
-### 4. **Execute o scraper**
-
+### Run Tests
 ```bash
-npm run scrape
+# Run all tests
+npm test
+
+# Run specific test suite
+npm run test:margin
+npm run test:filters
+npm run test:integration
 ```
 
-> Ou diretamente:
+### Test Coverage
+- **Unit Tests**: Core functionality validation
+- **Integration Tests**: End-to-end workflow testing
+- **Exploratory Tests**: Real API and scraping validation
 
-```bash
-node main.js
-```
+## 📚 Documentation
 
----
+Comprehensive documentation available in `docs/`:
 
-## 📁 Estrutura de diretórios
+- **System Architecture**: Component interaction and data flow
+- **API Integration**: Google Translate and ML scraping setup
+- **Changelog**: Complete history of improvements and fixes
+- **Configuration Guide**: Environment setup and optimization
 
-```
-├── main.js                  # Entrada principal
-├── config.js                # Configurações centralizadas
-│
-├── scraper/
-│   ├── aliexpressScraper.js
-│   ├── utils.js
-│
-├── filters/
-│   ├── quantitative.js
-│   ├── qualitative.js
-│   ├── riskAssessment.js
-│
-├── export/
-│   ├── excelExporter.js
-│
-├── output/                  # Arquivos Excel gerados
-├── scraper/debug_files/     # Screenshots, HTMLs, JSONs (opcional)
-├── .env
-├── package.json
-```
+## 🔧 Advanced Configuration
 
----
+### Google Translate Setup
+1. Create Google Cloud Project
+2. Enable Translate API
+3. Create Service Account
+4. Download JSON credentials
+5. Set `GOOGLE_APPLICATION_CREDENTIALS` path
 
-## ✨ Recursos implementados
+### Performance Optimization
+- Adjust `MAX_PRODUCTS_RAW` for collection size
+- Configure `TARGET_PRODUCTS_FINAL` for filtered results
+- Set appropriate `MIN_SALES` and `MIN_REVIEWS` thresholds
+- Enable/disable `HEADLESS` mode for debugging
 
-- ✅ Scraping real com evasão de bot detection
-- ✅ Filtros quantitativos com base em `.env`
-- ✅ Qualitativos deixados como `null` para futura IA
-- ✅ Avaliação de risco do fornecedor
-- ✅ Exportação dinâmica para `.xlsx` (todos os campos)
+## 🚀 Features Overview
 
----
+- ✅ **Stealth Scraping**: Advanced bot detection evasion
+- ✅ **Visual Matching**: Perceptual hash product comparison
+- ✅ **Smart Translation**: Context-aware search term translation
+- ✅ **Real-time ML Data**: Live Mercado Livre price validation
+- ✅ **Intelligent Filtering**: Multi-layer product qualification
+- ✅ **Risk Assessment**: Supplier and product risk analysis
+- ✅ **Excel Export**: Professional reporting with ExcelJS
+- ✅ **Comprehensive Testing**: Full test suite coverage
+- ✅ **Zero Vulnerabilities**: Security-first architecture
 
-## 🛡️ Segurança e boas práticas
+## 🛡️ Security & Best Practices
 
 - Usa `exceljs` no lugar de `xlsx` para evitar vulnerabilidades
 - Usa `puppeteer-extra-plugin-stealth`

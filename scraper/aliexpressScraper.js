@@ -37,16 +37,47 @@ import {
 } from '../filters/quantitative.js';
 
 import {
+  applyQualitativeFilter
+} from '../filters/qualitative.js';
+
+import {
   validarMargemOtimizada
 } from '../marginValidation/margin-validator.js';
 
 import {
-  buscarProdutosMercadoLivre
+  buscarProdutosCompativeisML,
+  buscarMelhorProdutoML
 } from '../marginValidation/mercado-livre-scraper.js';
 
 import {
   assessRisk
 } from '../filters/riskAssessment.js';
+
+import {
+  configurarPersistenciaCookies,
+  iniciarLimpezaAutomaticaCookies
+} from '../utils/persistencia-cookies.js';
+
+import {
+  iniciarLimpezaAutomatica
+} from '../utils/gerenciador-temporarios.js';
+
+import {
+  calcularScoreTotal,
+  ordenarPorScore,
+  gerarRelatorioScores
+} from '../scoring/product-scorer.js';
+
+import {
+  verificarDuplicidade,
+  marcarComoProcessado,
+  filtrarDuplicados
+} from '../validation/duplicate-checker.js';
+
+import {
+  iniciarMetricas,
+  metricas
+} from '../metrics/scraping-metrics.js';
 
 import {
   CATEGORIES,
@@ -68,6 +99,12 @@ import {
 export async function setupBrowser() {
     try {
         logInfo('🚀 Iniciando configuração do browser stealth...');
+
+        // 🧠 Melhoria 5: Iniciar limpeza automática de cookies
+        iniciarLimpezaAutomaticaCookies();
+        
+        // 🗂 Melhoria 3: Iniciar limpeza automática de temporários
+        iniciarLimpezaAutomatica();
 
         // Configurar Stealth Plugin com tratamento de erro
         try {
@@ -132,10 +169,13 @@ export async function setupBrowser() {
             logInfo(`🔧 Usando Chrome customizado: ${chromePath}`);
         }
 
+        // 🧠 Melhoria 5: Configurar persistência de cookies
+        const configComCookies = configurarPersistenciaCookies(browserConfig);
+
         // Lançar browser com tratamento de erro
         let browser;
         try {
-            browser = await puppeteer.launch(browserConfig);
+            browser = await puppeteer.launch(configComCookies);
             logSucesso('✅ Browser iniciado com sucesso');
         } catch (launchError) {
             logErro(`❌ Erro ao lançar browser: ${launchError.message}`);
@@ -252,6 +292,15 @@ function setupBrowserCleanupHandlers(browser) {
  */
 export async function processCategory(browser, categoria) {
     try {
+        // 📊 INICIALIZAR MÉTRICAS DA SESSÃO
+        const sessionMetrics = iniciarMetricas({
+            categoria: categoria,
+            maxProdutos: MAX_PRODUCTS_RAW,
+            maxPaginas: MAX_PAGES_PER_CATEGORY,
+            targetProdutos: TARGET_PRODUCTS_FINAL,
+            filtrosAtivos: ['quantitativo', 'qualitativo', 'margem', 'duplicidade']
+        });
+
         // Validação de entrada
         if (!browser) {
             throw new Error('Browser é obrigatório');
@@ -391,13 +440,33 @@ export async function processCategory(browser, categoria) {
         logSucesso(`🎯 FASE 1 CONCLUÍDA: ${todosProdutosColetados.length} produtos coletados`);
 
         // =================================
+        // FASE 1.5: VALIDAÇÃO DE DUPLICIDADE
+        // =================================
+        
+        logSucesso(`🔍 FASE 1.5: Validando duplicidade de produtos`);
+        
+        const resultadoDuplicidade = await filtrarDuplicados(todosProdutosColetados);
+        const produtosSemDuplicatas = resultadoDuplicidade.produtosUnicos;
+        
+        metricas.registrarErro('duplicidade', `${resultadoDuplicidade.stats.duplicados} produtos duplicados removidos`, {
+            totalInput: resultadoDuplicidade.stats.totalInput,
+            novos: resultadoDuplicidade.stats.novos,
+            duplicados: resultadoDuplicidade.stats.duplicados
+        });
+
+        if (resultadoDuplicidade.stats.duplicados > 0) {
+            logInfo(`🔄 Removidos ${resultadoDuplicidade.stats.duplicados} produtos duplicados`);
+            logInfo(`✅ Restaram ${produtosSemDuplicatas.length} produtos únicos para processamento`);
+        }
+
+        // =================================
         // FASE 2: BUSCA NO MERCADO LIVRE
         // =================================
         
         logSucesso(`🛒 FASE 2: Buscando preços no Mercado Livre`);
         
         const produtosComML = [];
-        const produtosOriginais = todosProdutosColetados.filter(p => !p.is_bundle);
+        const produtosOriginais = produtosSemDuplicatas.filter(p => !p.is_bundle);
         
         for (let i = 0; i < produtosOriginais.length; i++) {
             const produto = produtosOriginais[i];
@@ -468,6 +537,10 @@ export async function processCategory(browser, categoria) {
         
         for (const produto of produtosComQuantitativo) {
             try {
+                // 🧠 Melhoria 4: Aplicar filtro qualitativo automático
+                const resultadoQualitativo = await applyQualitativeFilter(produto);
+                produto.qualitativeScore = resultadoQualitativo;
+                
                 // Validação de margem com dados ML
                 let validacaoMargem = null;
                 if (produto.dadosMercadoLivre && !produto.is_bundle) {
@@ -479,14 +552,34 @@ export async function processCategory(browser, categoria) {
                 const risco = assessRisk(produto);
                 produto.avaliacaoRisco = risco;
                 
-                // Aprovação final
+                // Aprovação final (agora considera qualitativo + margem)
+                const aprovadoQualitativo = resultadoQualitativo.score >= 50; // Score mínimo 50%
                 const aprovadoMargem = validacaoMargem ? validacaoMargem.recomendacao?.viavel : true;
-                const aprovadoFinal = produto.aprovadoQuantitativo && aprovadoMargem;
+                const aprovadoFinal = produto.aprovadoQuantitativo && aprovadoQualitativo && aprovadoMargem;
                 
-                produto.aprovadoQualitativo = aprovadoMargem;
+                produto.aprovadoQualitativo = aprovadoQualitativo;
                 produto.aprovadoFinal = aprovadoFinal;
-                produto.filtros.qualitativo = { aprovado: aprovadoMargem };
+                produto.filtros.qualitativo = { 
+                    aprovado: aprovadoQualitativo,
+                    score: resultadoQualitativo.score,
+                    detalhes: resultadoQualitativo.analysis 
+                };
                 produto.filtros.margem = validacaoMargem;
+                
+                // 🎯 CALCULAR SCORE TOTAL DO PRODUTO
+                const scoreTotal = calcularScoreTotal(produto);
+                produto.scoreTotal = scoreTotal;
+                
+                // 📊 REGISTRAR PRODUTO NAS MÉTRICAS
+                const trackingId = metricas.iniciarProduto(produto);
+                metricas.finalizarProduto(trackingId, produto);
+                
+                // 🗂 MARCAR COMO PROCESSADO (ANTI-DUPLICIDADE)
+                await marcarComoProcessado(produto, {
+                    scoreTotal: scoreTotal.total,
+                    categoria: scoreTotal.categoria,
+                    sessaoId: sessionMetrics.sessionId
+                });
                 
                 produtosFinal.push(produto);
                 
@@ -508,6 +601,21 @@ export async function processCategory(browser, categoria) {
         logSucesso(`🎯 FASE 4 CONCLUÍDA: ${aprovadosFinal}/${produtosFinal.length} produtos aprovados finalmente`);
 
         // =================================
+        // FASE 5: ORDENAÇÃO E RELATÓRIOS FINAIS
+        // =================================
+        
+        logSucesso(`📊 FASE 5: Gerando relatórios e ordenação final`);
+        
+        // Ordenar produtos por score total (melhores primeiro)
+        const produtosOrdenados = ordenarPorScore(produtosFinal);
+        
+        // Gerar relatório de scores
+        const relatorioScores = gerarRelatorioScores(produtosOrdenados);
+        
+        // Finalizar métricas e gerar relatório
+        const relatorioMetricas = await metricas.finalizar();
+        
+        // =================================
         // RESULTADO FINAL
         // =================================
         
@@ -515,8 +623,13 @@ export async function processCategory(browser, categoria) {
         logSucesso(`   📦 ${produtosFinal.length} produtos processados`);
         logSucesso(`   ✅ ${aprovadosFinal} produtos aprovados`);
         logSucesso(`   🛒 ${produtosComML.filter(p => p.dadosMercadoLivre).length} produtos com dados ML`);
+        logSucesso(`   🎯 Produtos por categoria: 💎${relatorioScores.diamante} 🥇${relatorioScores.ouro} 🥈${relatorioScores.prata} 🥉${relatorioScores.bronze}`);
+        logSucesso(`   📊 Score médio: ${relatorioScores.scoresMedios.geral}`);
+        
+        // Exibir relatório de métricas
+        console.log(relatorioMetricas);
 
-        return produtosFinal;
+        return produtosOrdenados;
 
     } catch (error) {
         logErro(`💥 Erro crítico no processamento da categoria ${categoria}: ${error.message}`);
@@ -752,18 +865,27 @@ async function buscarDadosMercadoLivre(browser, nomeProduto) {
             throw new Error('Nome do produto é obrigatório');
         }
 
-        const resultadoBusca = await buscarProdutosMercadoLivre(browser, nomeProduto, {
+        // Criar objeto produto para busca compatível
+        const produtoParaBusca = {
+            nome: nomeProduto,
+            nomeTraduzido: nomeProduto,
+            imagemURL: null // Sem imagem específica neste contexto
+        };
+
+        const resultadoBusca = await buscarProdutosCompativeisML(browser, produtoParaBusca, {
             maxResults: 15,
             maxPages: 2
         });
 
-        if (resultadoBusca.sucesso) {
-            logInfo(`✅ ML: ${resultadoBusca.produtosEncontrados} produtos encontrados`);
+        if (resultadoBusca.encontrouProdutos) {
+            logInfo(`✅ ML: ${resultadoBusca.produtosCompatíveis.length} produtos encontrados`);
             return {
                 sucesso: true,
-                produtosEncontrados: resultadoBusca.produtosEncontrados,
-                precos: resultadoBusca.precos,
-                fonte: 'Mercado Livre Real',
+                produtosEncontrados: resultadoBusca.produtosCompatíveis.length,
+                precos: resultadoBusca.produtosCompatíveis.map(p => p.preco),
+                produtos: resultadoBusca.produtosCompatíveis,
+                melhorMatch: resultadoBusca.melhorMatch,
+                fonte: 'Mercado Livre Real v2.0',
                 timestamp: new Date().toISOString()
             };
         } else {

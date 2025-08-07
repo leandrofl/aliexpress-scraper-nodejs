@@ -1,53 +1,54 @@
-# 🧪 TESTES UNITÁRIOS - AliExpress Scraper
+# 🧪 AliExpress Scraper - Test Suite
 
-## 📁 Estrutura de Testes
+Comprehensive testing framework for the AliExpress Scraper project with multiple test categories and methodologies.
 
-```
-unitTests/
-├── filters/
-│   ├── quantitative.test.js        # Testes filtros quantitativos
-│   ├── qualitative.test.js         # Testes filtros qualitativos
-│   └── integrated-filters.test.js  # Testes filtros integrados
-├── validation/
-│   └── margin-validator.test.js    # Testes validação de margem
-├── exploratory/                    # Testes exploratórios e experimentais
-│   ├── test-busca.js              # Teste de busca básica
-│   ├── test-conexao.js            # Teste de conexão
-│   ├── test-exact-config.js       # Teste configuração exata
-│   ├── test-minimal.js            # Teste minimalista
-│   ├── test-newpage.js            # Teste nova página
-│   ├── test-sem-stealth.js        # Teste sem stealth
-│   ├── executive-summary-final.js  # Resumo executivo final
-│   ├── integrated-tests.js        # Testes integrados exploratórios
-│   ├── margin-optimized-tests.js  # Testes de margem otimizados
-│   └── margin-tests.js            # Testes de margem básicos
-├── test-runner.js                  # Suíte principal de testes
-├── test-simple.js                  # Teste simples de estrutura
-└── README.md                       # Este arquivo
-```
+## 📁 Test Structure
 
-## 🚀 Como Executar
+### 🔧 Core Tests (`core/`)
+- **config-intelligent.test.js**: Configuration system validation
 
-### Teste Simples (Verificação de Estrutura)
+### 🔍 Exploratory Tests (`exploratory/`)
+- **executive-summary-final.js**: Complete system integration tests
+- **integrated-tests.js**: End-to-end workflow validation
+- **margin-optimized-tests.js**: Margin calculation optimization tests
+- **margin-tests.js**: Basic margin validation tests
+- **teste-google-direto.js**: Direct Google Translate API tests
+- **teste-google-translate-real.js**: Real translation workflow tests
+- **teste-imghash-nova.js**: New image hash implementation tests
+- **teste-ml-real.js**: Real Mercado Livre scraping tests
+- **teste-sintaxe.js**: Syntax and code structure validation
+- **teste-sistema-imagens-lote.js**: Batch image processing tests
+- **teste-sistema-traducao.js**: Translation system integration tests
+- **test-fallback-traducao.js**: Translation fallback mechanism tests
+
+### 🔽 Filter Tests (`filters/`)
+- **integrated-filters.test.js**: Combined filter system tests
+- **qualitative.test.js**: Qualitative filter validation
+- **quantitative.test.js**: Quantitative filter validation
+
+### ✅ Validation Tests (`validation/`)
+- **margin-validator.test.js**: Margin validation logic tests
+
+## 🚀 Running Tests
+
+### Quick Test Commands
 ```bash
-node unitTests/test-simple.js
+# Run all tests
+npm test
+
+# Run specific test category
+npm run test:core
+npm run test:filters
+npm run test:validation
+npm run test:exploratory
 ```
 
-### Suíte Completa de Testes
+### Manual Test Execution
 ```bash
-node unitTests/test-runner.js
-```
-
-### Testes Específicos
-```bash
-# Apenas filtros quantitativos
-node unitTests/test-runner.js quantitativo
-
-# Apenas validação de margem
-node unitTests/test-runner.js margem
-
-# Relatório detalhado
-node unitTests/test-runner.js --relatorio
+# Individual test files
+node unitTests/exploratory/teste-ml-real.js
+node unitTests/validation/margin-validator.test.js
+node unitTests/filters/quantitative.test.js
 ```
 
 ## 📊 Cobertura de Testes
