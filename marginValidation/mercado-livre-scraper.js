@@ -12,7 +12,8 @@ import axios from 'axios';
 import axiosRetry from 'axios-retry';
 import * as cheerio from 'cheerio';
 import { compararImagensPorHash } from '../utils/comparador-imagens.js';
-import { gerarTermosDeBusca, produtosSaoCompativeis } from '../utils/comparador-produtos.js';
+import { produtosSaoCompativeis } from '../utils/comparador-produtos.js';
+import { calcularRiscoProduto, determinarMetodoValidacao, permiteValidacaoTextual } from '../utils/calculadora-risco.js';
 
 // 🛡 Melhoria 2: Configurar retry automático para falhas de rede
 axiosRetry(axios, {
@@ -99,6 +100,12 @@ export async function buscarMelhorProdutoML(produtoAli) {
 
       for (const item of itens) {
         try {
+          // Verificar se categoria permite fallback textual
+          if (!permiteValidacaoTextual(produtoAli)) {
+            console.log('❌ Categoria não permite fallback textual');
+            continue;
+          }
+          
           // Verificar compatibilidade textual
           const compatibilidade = produtosSaoCompativeis(produtoAli, {
             nome: item.nome,
@@ -111,13 +118,43 @@ export async function buscarMelhorProdutoML(produtoAli) {
             
             if (ratioPreco >= 2 && ratioPreco <= 5 && compatibilidade.score > maiorScore) {
               maiorScore = compatibilidade.score;
+              
+              // Criar dados para análise de risco
+              const dadosParaRisco = {
+                ...produtoAli,
+                imagem_comparada: false,
+                imagem_match: false,
+                score_imagem: 0,
+                score_texto: compatibilidade.score,
+                match_por_texto: true,
+                ratio_preco: ratioPreco,
+                fonte_de_verificacao: 'texto'
+              };
+              
+              // Calcular risco
+              const analiseRisco = calcularRiscoProduto(dadosParaRisco);
+              const metodoValidacao = determinarMetodoValidacao(dadosParaRisco);
+              
               melhorCompatibilidade = {
                 ...item,
                 similaridade: compatibilidade.score,
+                // Campos de controle de qualidade (ChatGPT)
                 imagemComparada: false,
                 fonteDeVerificacao: 'texto',
                 riscoImagem: true,
-                compatibilidadeTextual: compatibilidade,
+                metodoValidacaoMargem: metodoValidacao,
+                scoreImagem: 0,
+                imagemMatch: false,
+                scoreTexto: compatibilidade.score,
+                matchPorTexto: true,
+                riscoFinal: analiseRisco.riscoFinal,
+                pendenteRevisao: analiseRisco.pendenteRevisao,
+                // Dados de compatibilidade expandidos
+                compatibilidadeTextual: {
+                  ...compatibilidade,
+                  detalhesRisco: analiseRisco.detalhesRisco,
+                  classificacao: analiseRisco.classificacaoRisco
+                },
                 ratioPreco: ratioPreco
               };
             }

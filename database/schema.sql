@@ -58,12 +58,37 @@ CREATE TABLE IF NOT EXISTS produtos (
   status text DEFAULT 'coletado' CHECK (status IN ('coletado', 'analisado', 'testado', 'aprovado', 'listado', 'reprovado')),
   hash_duplicidade text UNIQUE, -- Sistema anti-duplicidade
   
-  -- 🎯 Campos de fallback textual (implementando sugestão ChatGPT)
+  -- 🎯 Campos de fallback textual e controle de qualidade (ChatGPT + Copilot)
   imagem_comparada boolean DEFAULT true,
   fonte_de_verificacao text DEFAULT 'imagem' CHECK (fonte_de_verificacao IN ('imagem', 'texto', 'erro')),
   risco_imagem boolean DEFAULT false,
   compatibilidade_textual jsonb, -- Dados da análise de compatibilidade textual
   ratio_preco numeric(5,2), -- Razão entre preço ML e AliExpress
+  
+  -- 🔍 Campos de análise avançada (Sugestões ChatGPT)
+  metodo_validacao_margem text DEFAULT 'nenhum' CHECK (metodo_validacao_margem IN ('imagem', 'texto', 'nenhum')),
+  score_imagem integer DEFAULT 0 CHECK (score_imagem >= 0 AND score_imagem <= 100),
+  imagem_match boolean DEFAULT false,
+  imagem_erro text, -- 'timeout', '404', 'hash_divergente', etc.
+  score_texto integer DEFAULT 0 CHECK (score_texto >= 0 AND score_texto <= 100),
+  match_por_texto boolean DEFAULT false,
+  risco_final integer DEFAULT 0 CHECK (risco_final >= 0 AND risco_final <= 100),
+  pendente_revisao boolean DEFAULT false,
+  
+  -- 🛒 Dados detalhados Mercado Livre
+  preco_mercado_livre numeric(10,2),
+  link_produto_ml text,
+  imagem_ml text,
+  fonte_imagem_ml text DEFAULT 'ml',
+  termos_busca_ml text,
+  
+  -- 💰 Análise financeira detalhada
+  preco_ali_usd numeric(10,2),
+  preco_ali_brl numeric(10,2),
+  frete_ali_brl numeric(10,2) DEFAULT 0,
+  preco_total_ali_brl numeric(10,2),
+  margem_lucro_rs numeric(10,2),
+  moeda_referencia text DEFAULT 'BRL' CHECK (moeda_referencia IN ('USD', 'BRL')),
   
   -- ⏰ Timestamps
   primeira_coleta_em timestamptz DEFAULT now(),

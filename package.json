@@ -11,6 +11,7 @@
     "db:setup": "node database/setup-database.js",
     "db:stats": "node -e \"import('./database/database-integration.js').then(m => m.obterEstatisticasGerais().then(console.log))\"",
     "db:risco": "node scripts/monitor-risco.js",
+    "test:risco": "node tests/test-sistema-risco.js",
     "lint": "eslint . --ext .js",
     "format": "prettier --write .",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config=unitTests/jest.config.js",
