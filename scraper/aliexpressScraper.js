@@ -19,6 +19,7 @@
 
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { CHROME_PATH } from '../config.js';
 import {
   scrollUntilAllProductsLoaded,
   tirarScreenshot,
@@ -69,10 +70,10 @@ import {
 } from '../scoring/product-scorer.js';
 
 import {
-  verificarDuplicidade,
-  marcarComoProcessado,
-  filtrarDuplicados
-} from '../validation/duplicate-checker.js';
+    verificarDuplicidade,
+    marcarComoProcessado,
+    filtrarDuplicados
+} from '../utils/duplicate-checker.js';
 
 import {
   iniciarMetricas,
@@ -170,10 +171,10 @@ export async function setupBrowser() {
         };
 
         // Adicionar caminho do Chrome se especificado
-        const chromePath = process.env.CHROME_PATH;
-        if (chromePath) {
-            browserConfig.executablePath = chromePath;
-            logInfo(`🔧 Usando Chrome customizado: ${chromePath}`);
+        // Usar CHROME_PATH processado pelo config.js
+        if (CHROME_PATH) {
+            browserConfig.executablePath = CHROME_PATH;
+            logInfo(`🔧 Usando Chrome customizado: ${CHROME_PATH}`);
         }
 
         // 🧠 Melhoria 5: Configurar persistência de cookies
@@ -477,17 +478,17 @@ export async function processCategory(browser, categoria) {
         
         for (let i = 0; i < produtosOriginais.length; i++) {
             const produto = produtosOriginais[i];
-            
+
             try {
                 logInfo(`🔍 ML ${i + 1}/${produtosOriginais.length}: ${produto.nome || produto.product_id}`);
-                
-                // Buscar dados reais do Mercado Livre
-                const dadosML = await buscarDadosMercadoLivre(browser, produto.nome);
-                
+
+                // Buscar dados reais do Mercado Livre (passando o produto inteiro)
+                const dadosML = await buscarDadosMercadoLivre(browser, produto);
+
                 // Adicionar dados ML ao produto
                 produto.dadosMercadoLivre = dadosML;
                 produtosComML.push(produto);
-                
+
             } catch (mlError) {
                 logErro(`❌ Erro na busca ML: ${mlError.message}`);
                 // Adicionar produto sem dados ML
@@ -644,7 +645,7 @@ export async function processCategory(browser, categoria) {
                 
                 // Preparar dados para o banco
                 const dadosBanco = {
-                    product_id_aliexpress: produto.id,
+                    product_id_aliexpress: produto.product_id,
                     nome: produto.nome,
                     categoria: categoria,
                     preco_aliexpress: produto.preco,
@@ -826,10 +827,10 @@ async function realizarBuscaInicial(page, categoria) {
 
         if (searchBox) {
             await searchBox.click();
-            await page.waitForTimeout(500);
+            await new Promise(resolve => setTimeout(resolve, 500));
             await searchBox.type(categoria, { delay: 100 });
             await page.keyboard.press('Enter');
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
             logSucesso(`✅ Busca realizada com sucesso!`);
 
             // Aplicar filtro de mais vendidos com tratamento de erro
@@ -887,7 +888,7 @@ async function navegarProximaPagina(page, numeroPagina) {
 
         if (nextButton) {
             await nextButton.click();
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
             return true;
         } else {
             logInfo(`⚠️ Botão de próxima página não encontrado`);
@@ -956,38 +957,109 @@ async function aguardarECarregarProdutos(page, numeroPagina) {
  * @param {string} nomeProduto - Nome do produto para buscar
  * @returns {Object} Dados do Mercado Livre
  */
-async function buscarDadosMercadoLivre(browser, nomeProduto) {
+async function buscarDadosMercadoLivre(browser, produtoAli) {
     try {
-        if (!nomeProduto || typeof nomeProduto !== 'string') {
-            throw new Error('Nome do produto é obrigatório');
+        // Validar entrada
+        if (!produtoAli || typeof produtoAli !== 'object') {
+            throw new Error('Produto completo é obrigatório');
         }
 
-        // Criar objeto produto para busca compatível
-        const produtoParaBusca = {
-            nome: nomeProduto,
-            nomeTraduzido: nomeProduto,
-            imagemURL: null // Sem imagem específica neste contexto
-        };
+        // Extrair imagens do AliExpress
+        let imagensAli = [];
+        if (Array.isArray(produtoAli.imagens)) {
+            imagensAli = produtoAli.imagens;
+        } else if (typeof produtoAli.imagens === 'string') {
+            imagensAli = produtoAli.imagens.split(',').map(img => img.trim()).filter(Boolean);
+        } else if (produtoAli.imagemURL) {
+            imagensAli = [produtoAli.imagemURL];
+        }
 
-        const resultadoBusca = await buscarProdutosCompativeisML(browser, produtoParaBusca, {
+        // Buscar produtos compatíveis no ML
+        const resultadoBusca = await buscarProdutosCompativeisML(browser, produtoAli, {
             maxResults: 15,
             maxPages: 2
         });
 
-        if (resultadoBusca.encontrouProdutos) {
-            logInfo(`✅ ML: ${resultadoBusca.produtosCompatíveis.length} produtos encontrados`);
-            return {
-                sucesso: true,
-                produtosEncontrados: resultadoBusca.produtosCompatíveis.length,
-                precos: resultadoBusca.produtosCompatíveis.map(p => p.preco),
-                produtos: resultadoBusca.produtosCompatíveis,
-                melhorMatch: resultadoBusca.melhorMatch,
-                fonte: 'Mercado Livre Real v2.0',
-                timestamp: new Date().toISOString()
-            };
-        } else {
-            throw new Error(resultadoBusca.erro || 'Busca ML falhou');
+        if (!resultadoBusca.encontrouProdutos || !resultadoBusca.produtosCompatíveis.length) {
+            throw new Error(resultadoBusca.erro || 'Nenhum produto compatível encontrado no ML');
         }
+
+        // Carregar imghash e compareHashes
+        const imghash = require('imghash');
+        const { compareHashes } = require('imghash/lib/hamming');
+
+        // Gerar hashes das imagens do AliExpress
+        async function getHashesFromImages(imageUrls) {
+            const hashes = [];
+            for (const url of imageUrls) {
+                try {
+                    const hash = await imghash.hash(url, 16); // 16 = 64 bits
+                    hashes.push(hash);
+                } catch (err) {
+                    console.warn(`❌ Erro ao gerar hash da imagem: ${url}`, err.message);
+                }
+            }
+            return hashes;
+        }
+
+        // Função para comparar N x N hashes
+        function getMenorDistanciaHash(hashesAli, hashesML) {
+            let menorDistancia = Infinity;
+            for (const hashAli of hashesAli) {
+                for (const hashML of hashesML) {
+                    const dist = compareHashes(hashAli, hashML); // retorna 0 a 64
+                    if (dist < menorDistancia) menorDistancia = dist;
+                }
+            }
+            const similaridade = 1 - menorDistancia / 64;
+            return {
+                menorDistancia,
+                similaridade: Number(similaridade.toFixed(2))
+            };
+        }
+
+        // Gerar hashes das imagens do AliExpress
+        const hashesAli = await getHashesFromImages(imagensAli);
+
+        // Para cada candidato ML, comparar N x N imagens
+        const produtosML = [];
+        for (const candidato of resultadoBusca.produtosCompatíveis) {
+            let imagensML = [];
+            if (Array.isArray(candidato.imagens)) {
+                imagensML = candidato.imagens;
+            } else if (typeof candidato.imagens === 'string') {
+                imagensML = candidato.imagens.split(',').map(img => img.trim()).filter(Boolean);
+            } else if (candidato.imagem) {
+                imagensML = [candidato.imagem];
+            }
+
+            const hashesML = await getHashesFromImages(imagensML);
+            let similaridade_visual = 0;
+            if (hashesAli.length && hashesML.length) {
+                const { similaridade } = getMenorDistanciaHash(hashesAli, hashesML);
+                similaridade_visual = similaridade;
+            }
+            candidato.similaridade_visual = similaridade_visual;
+            candidato.metodoValidacaoImagem = 'pHash_NvsN';
+            candidato.aprovadoVisualmente = similaridade_visual >= 0.80;
+            produtosML.push(candidato);
+        }
+
+        // Encontrar melhor match visual
+        const melhorMatch = produtosML.reduce((best, curr) => {
+            return (curr.similaridade_visual > (best?.similaridade_visual || 0)) ? curr : best;
+        }, null);
+
+        logInfo(`✅ ML: ${produtosML.length} produtos comparados visualmente`);
+        return {
+            sucesso: true,
+            produtosEncontrados: produtosML.length,
+            precos: produtosML.map(p => p.preco),
+            produtos: produtosML,
+            melhorMatch,
+            fonte: 'Mercado Livre Real v2.0',
+            timestamp: new Date().toISOString()
+        };
 
     } catch (error) {
         logErro(`❌ Erro na busca ML: ${error.message}`);
@@ -1240,6 +1312,11 @@ export async function extractProductDetails(browser, produto) {
         // Usar product_id se disponível, senão extrair da URL
         let productId = produto.product_id;
         let urlProduto = produto.url || produto.href;
+    // Variáveis compartilhadas no escopo da função
+    let novaAba;
+    let apiConfig;
+    let detalhes = getDefaultProductDetails();
+    let dadosAPI = null;
         
         if (!productId && urlProduto) {
             const productIdMatch = urlProduto.match(/\/item\/(\d+)\.html/);
@@ -1253,15 +1330,8 @@ export async function extractProductDetails(browser, produto) {
             return getDefaultProductDetails();
         }
         
-        // Garantir URL padrão
-        if (!urlProduto || !urlProduto.startsWith('https://pt.aliexpress.com/item/')) {
-            urlProduto = `https://pt.aliexpress.com/item/${productId}.html`;
-        }
-        
-        logInfo(`🔍 Acessando PDP: ${urlProduto}`);
-        
-        // Verificar se o browser ainda está ativo antes de criar nova aba
-        let novaAba;
+        // Novo fluxo: abrir página principal, buscar pelo product_id e clicar para abrir detalhes
+        logInfo(`🔍 Abrindo página principal do AliExpress para buscar produto ${productId}`);
         try {
             // Verificar se o browser ainda está conectado
             const isConnected = browser.isConnected();
@@ -1270,11 +1340,9 @@ export async function extractProductDetails(browser, produto) {
                 return getDefaultProductDetails();
             }
 
-            // Verificar quantas abas já estão abertas para controle
+            // Fechar abas about:blank extras que podem estar abertas
             const pages = await browser.pages();
             logInfo(`📊 Abas abertas antes de criar nova: ${pages.length}`);
-            
-            // Fechar abas about:blank extras que podem estar abertas
             for (const page of pages) {
                 const url = page.url();
                 if (url === 'about:blank' && pages.length > 2) {
@@ -1286,118 +1354,126 @@ export async function extractProductDetails(browser, produto) {
                     }
                 }
             }
-            
+
             novaAba = await browser.newPage();
             logInfo(`✅ Nova aba criada com sucesso para produto ${productId}`);
         } catch (pageError) {
             logErro(`❌ Erro ao criar nova aba: ${pageError.message}`);
             return getDefaultProductDetails();
         }
-        
-        let apiConfig;
-        
+
         try {
             // Configurar interceptação melhorada da API
             apiConfig = await configurarInterceptacaoAPI(novaAba, productId);
-            
-            // Pre-warming: navegar para página inicial do AliExpress primeiro (melhora interceptação)
-            logInfo(`� Pre-warming conexão para produto ${productId}...`);
-            try {
-                await novaAba.goto('https://pt.aliexpress.com/', { 
-                    waitUntil: 'domcontentloaded', 
-                    timeout: 15000 
-                });
-                await delay(1000);
-            } catch (prewarmError) {
-                logInfo(`⚠️ Pre-warming falhou, continuando: ${prewarmError.message}`);
-            }
-            
-            // Navegar para a página do produto
-            await novaAba.goto(urlProduto, { 
-                waitUntil: 'domcontentloaded', 
-                timeout: 40000 
+
+            // Abrir página principal do AliExpress
+            await novaAba.goto('https://pt.aliexpress.com/', {
+                waitUntil: 'domcontentloaded',
+                timeout: 20000
             });
-            
-            // Estratégia de aguardo inteligente
-            await delay(2000); // Aguardo inicial
-            
-            // Se não interceptou, tentar estratégias adicionais
-            if (!apiConfig.isInterceptada()) {
-                logInfo(`⏳ API não interceptada ainda, tentando estratégias adicionais...`);
-                
-                // Estratégia 1: Scroll para ativar lazy loading
-                await novaAba.evaluate(() => {
-                    window.scrollTo(0, document.body.scrollHeight / 3);
-                });
-                await delay(1500);
-                
-                // Estratégia 2: Hover sobre elementos que podem disparar API
+            await delay(1500);
+
+            // Buscar pelo product_id no campo de busca
+            const searchSelectors = [
+                'input[placeholder*="busca"]',
+                'input[name="SearchText"]',
+                '#search-words',
+                'input[type="search"]',
+                '.search-bar input'
+            ];
+            let searchBox = null;
+            for (const selector of searchSelectors) {
                 try {
-                    await novaAba.hover('.product-price, .pdp-product-price, .product-shipping');
-                } catch (hoverError) {
-                    // Ignora erro de hover
-                }
-                await delay(1500);
-                
-                // Estratégia 3: Recarregar se ainda não interceptou
-                if (!apiConfig.isInterceptada() && apiConfig.getTentativas() < 2) {
-                    logInfo(`🔄 Tentando recarregar página para interceptar API...`);
-                    await novaAba.reload({ waitUntil: 'domcontentloaded' });
-                    await delay(3000);
+                    searchBox = await novaAba.$(selector);
+                    if (searchBox) {
+                        logInfo(`✅ Campo de busca encontrado: ${selector}`);
+                        break;
+                    }
+                } catch (selectorError) {
+                    continue;
                 }
             }
-            
-        } catch (navigationError) {
-            logErro(`❌ Erro na navegação para ${urlProduto}: ${navigationError.message}`);
-            
-            // Se for erro de sessão perdida, tentar recriar a aba
-            if (navigationError.message.includes('Session') || navigationError.message.includes('Target')) {
-                logInfo(`🔄 Tentativa de recuperação da sessão...`);
-                try {
-                    await novaAba.close();
-                    if (browser.isConnected()) {
-                        novaAba = await browser.newPage();
-                        await novaAba.goto(urlProduto, { 
-                            waitUntil: 'domcontentloaded', 
-                            timeout: 30000 
-                        });
-                        await delay(2000);
-                        logSucesso(`✅ Sessão recuperada com sucesso`);
-                    } else {
-                        logErro(`❌ Browser desconectado, não é possível recuperar`);
-                        return getDefaultProductDetails();
-                    }
-                } catch (recoveryError) {
-                    logErro(`❌ Falha na recuperação: ${recoveryError.message}`);
-                    return getDefaultProductDetails();
-                }
+            if (searchBox) {
+                await searchBox.click();
+                await delay(200);
+                await searchBox.type(productId, { delay: 10 }); // digitação rápida
+                await novaAba.keyboard.press('Enter');
+                await delay(2000);
             } else {
+                logErro(`❌ Campo de busca não encontrado para produto ${productId}`);
                 return getDefaultProductDetails();
             }
+
+            // Esperar resultados carregarem
+            await delay(2000);
+
+            // Tentar encontrar e clicar no produto correto
+            let produtoEncontrado = false;
+            try {
+                const produtoSelector = `a[href*="/item/${productId}.html"]`;
+                await novaAba.waitForSelector(produtoSelector, { timeout: 8000 });
+                await novaAba.click(produtoSelector);
+                produtoEncontrado = true;
+                logInfo(`✅ Produto ${productId} encontrado e clicado nos resultados de busca.`);
+            } catch (clickError) {
+                logErro(`❌ Produto ${productId} não encontrado nos resultados de busca: ${clickError.message}`);
+                // Fallback: tentar abrir diretamente a PDP do produto
+                try {
+                    const fallbackUrl = (urlProduto && urlProduto.includes('/item/'))
+                        ? urlProduto
+                        : `https://pt.aliexpress.com/item/${productId}.html`;
+                    await novaAba.goto(fallbackUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                    // Pequena espera para disparar requests da PDP
+                    await delay(1500);
+                    produtoEncontrado = true;
+                    logInfo(`🔗 PDP aberta via fallback para produto ${productId}`);
+                } catch (gotoErr) {
+                    logErro(`❌ Falha no fallback de abertura da PDP para ${productId}: ${gotoErr.message}`);
+                    return getDefaultProductDetails();
+                }
+            }
+
+            // Esperar a navegação para a página de detalhes
+            await delay(3500);
+        } catch (navigationError) {
+            logErro(`❌ Erro ao buscar produto ${productId} via busca: ${navigationError.message}`);
+            return getDefaultProductDetails();
         }
-        
-        let detalhes = getDefaultProductDetails();
-        const dadosAPI = apiConfig.getDadosAPI();
-        
+
+    // ...continua fluxo normal de interceptação de API e extração de dados...
+    // detalhes já foi declarado anteriormente, apenas atribuir
+    dadosAPI = apiConfig.getDadosAPI();
+
         if (dadosAPI && apiConfig.isInterceptada()) {
+            // Logar JSON interceptado para debug do campo productId
+            try {
+                logInfo(`[DEBUG] JSON interceptado para produto ${productId}:`);
+                logInfo(JSON.stringify(dadosAPI, null, 2));
+            } catch (logJsonError) {
+                logErro(`[DEBUG] Falha ao logar JSON interceptado: ${logJsonError.message}`);
+            }
             // Parse dos dados da API seguindo a lógica otimizada
-            detalhes = parseProductJson(dadosAPI, productId);
+            if (typeof dadosAPI === 'object' && dadosAPI !== null && Object.keys(dadosAPI).length > 0) {
+                try {
+                    detalhes = parseProductJson(dadosAPI, productId);
+                    logSucesso(`📊 Dados extraídos via API para produto ${productId}`);
+                } catch (parseError) {
+                    logErro(`❌ Erro ao fazer parse do JSON do produto ${productId}: ${parseError.message}`);
+                }
+            } else {
+                logErro(`❌ Dados da API inválidos ou vazios para produto ${productId}`);
+            }
             logSucesso(`📊 Dados extraídos via API para produto ${productId}`);
         } else {
             // Fallback melhorado: tentar extrair dados do DOM
             logInfo(`⚠️ API não interceptada (${apiConfig.getTentativas()} tentativas), usando fallback DOM para ${productId}`);
-            
             try {
-                // Aguardar mais um pouco para o DOM carregar completamente
                 await delay(2000);
-                
-                // Scroll na página para garantir que tudo carregou
                 await novaAba.evaluate(() => {
                     window.scrollTo(0, document.body.scrollHeight / 2);
                 });
                 await delay(1000);
-                
-                detalhes = await novaAba.evaluate(() => {
+                const detalhesDom = await novaAba.evaluate(() => {
                     const getText = (selector) => {
                         try {
                             return document.querySelector(selector)?.innerText || '';
@@ -1405,7 +1481,6 @@ export async function extractProductDetails(browser, produto) {
                             return '';
                         }
                     };
-                    
                     return {
                         vendedor: getText('.store-info .store-name, .shop-name'),
                         peso: getText('td:contains("Peso") + td'),
@@ -1415,11 +1490,12 @@ export async function extractProductDetails(browser, produto) {
                         vendas: 0
                     };
                 });
+                detalhes = detalhesDom;
             } catch (domError) {
                 logErro(`❌ Erro no fallback DOM: ${domError.message}`);
             }
         }
-        
+
         // Limpar listeners de API
         try {
             if (apiConfig && apiConfig.cleanup) {
@@ -1429,7 +1505,7 @@ export async function extractProductDetails(browser, produto) {
         } catch (cleanupListenerError) {
             // Ignora erro de limpeza de listeners
         }
-        
+
         // Fechar aba de forma garantida
         try {
             if (novaAba && !novaAba.isClosed()) {
@@ -1438,7 +1514,6 @@ export async function extractProductDetails(browser, produto) {
             }
         } catch (closeError) {
             logErro(`⚠️ Erro ao fechar aba: ${closeError.message}`);
-            // Tentar fechar de forma forçada
             try {
                 if (novaAba) {
                     await novaAba.evaluate(() => window.close());
@@ -1448,7 +1523,7 @@ export async function extractProductDetails(browser, produto) {
             }
         }
 
-        return detalhes;
+    return detalhes;
 
     } catch (error) {
         logErro(`💥 Erro ao extrair detalhes do produto: ${error.message}`);
@@ -1506,69 +1581,101 @@ function getDefaultProductDetails() {
  * @returns {Object} Detalhes extraídos
  */
 function parseProductJson(data, productId) {
-    try {
-        const detalhes = getDefaultProductDetails();
+    const detalhes = getDefaultProductDetails();
 
+    // ⚠️ Validação de entrada
+    if (!data || typeof data !== 'object') {
+        logErro(`❌ JSON inválido ou vazio para produto ${productId}`);
+        return detalhes;
+    }
+
+    try {
         // Título
-        const title = data?.GLOBAL_DATA?.globalData?.subject || '';
-        
+        try {
+            detalhes.titulo = data?.GLOBAL_DATA?.globalData?.subject || '';
+        } catch (e) {
+            logErro(`❌ Erro ao extrair título do produto ${productId}: ${e.message}`);
+        }
+
         // Preço
-        const priceStr = data?.PRICE?.targetSkuPriceInfo?.salePriceString || '';
-        if (priceStr) {
-            const priceMatch = priceStr.match(/R\$\s*([\d,.]+)/);
-            if (priceMatch) {
-                detalhes.preco = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+        try {
+            const priceStr = data?.PRICE?.targetSkuPriceInfo?.salePriceString || '';
+            if (priceStr) {
+                const priceMatch = priceStr.match(/R\$\s*([\d,.]+)/);
+                if (priceMatch) {
+                    detalhes.preco = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+                }
             }
+        } catch (e) {
+            logErro(`❌ Erro ao extrair preço do produto ${productId}: ${e.message}`);
         }
-        
+
         // Vendas
-        const otherText = data?.PC_RATING?.otherText || '';
-        if (otherText && otherText.includes('vendidos')) {
-            const salesMatch = otherText.match(/(\d+)/);
-            if (salesMatch) {
-                detalhes.vendas = parseInt(salesMatch[1]);
+        try {
+            const otherText = data?.PC_RATING?.otherText || '';
+            if (otherText && otherText.includes('vendidos')) {
+                const salesMatch = otherText.match(/(\d+)/);
+                if (salesMatch) {
+                    detalhes.vendas = parseInt(salesMatch[1]);
+                }
             }
+        } catch (e) {
+            logErro(`❌ Erro ao extrair vendas do produto ${productId}: ${e.message}`);
         }
-        
+
         // Imagens
-        const images = data?.HEADER_IMAGE_PC?.imagePathList || [];
-        detalhes.imagens = images.join(', ');
-        
-        // Reviews e Rating
-        const ratingInfo = data?.PC_RATING || {};
-        detalhes.reviews = parseInt(ratingInfo.totalValidNum || 0);
-        detalhes.rating = parseFloat(ratingInfo.rating || 0);
-        
-        // Informações de frete
-        const logisticsList = data?.SHIPPING?.originalLayoutResultList || [];
-        if (logisticsList.length > 0) {
-            const logistics = logisticsList[0]?.bizData || {};
-            const additionLayout = logisticsList[0]?.additionLayout || [];
-            
-            detalhes.custoFrete = parseFloat(logistics.displayAmount || 0);
-            detalhes.tipoFrete = logistics.deliveryOptionCode || '';
-            detalhes.tempoEntrega = parseFloat(logistics.guaranteedDeliveryTime || 0);
-            
-            // Rastreamento
-            if (additionLayout.length > 0) {
-                detalhes.rastreamento = additionLayout[0]?.content === 'Rastreamento Disponível';
-            }
+        try {
+            const images = data?.HEADER_IMAGE_PC?.imagePathList || [];
+            detalhes.imagens = Array.isArray(images) ? images.join(', ') : '';
+        } catch (e) {
+            logErro(`❌ Erro ao extrair imagens do produto ${productId}: ${e.message}`);
         }
-        
+
+        // Reviews e Rating
+        try {
+            const ratingInfo = data?.PC_RATING || {};
+            detalhes.reviews = parseInt(ratingInfo.totalValidNum || 0);
+            detalhes.rating = parseFloat(ratingInfo.rating || 0);
+        } catch (e) {
+            logErro(`❌ Erro ao extrair reviews/rating do produto ${productId}: ${e.message}`);
+        }
+
+        // Informações de frete
+        try {
+            const logisticsList = data?.SHIPPING?.originalLayoutResultList || [];
+            if (Array.isArray(logisticsList) && logisticsList.length > 0) {
+                const logistics = logisticsList[0]?.bizData || {};
+                const additionLayout = logisticsList[0]?.additionLayout || [];
+                detalhes.custoFrete = parseFloat(logistics.displayAmount || 0);
+                detalhes.tipoFrete = logistics.deliveryOptionCode || '';
+                detalhes.tempoEntrega = parseFloat(logistics.guaranteedDeliveryTime || 0);
+                if (additionLayout.length > 0) {
+                    detalhes.rastreamento = additionLayout[0]?.content === 'Rastreamento Disponível';
+                }
+            }
+        } catch (e) {
+            logErro(`❌ Erro ao extrair frete do produto ${productId}: ${e.message}`);
+        }
+
         // Informações do vendedor
-        const supplier = data?.SHOP_CARD_PC || {};
-        detalhes.vendedor = supplier.storeName || '';
-        detalhes.avaliacaoVendedor = supplier.sellerPositiveRate ? (parseFloat(supplier.sellerPositiveRate) / 20) : 0;
-        detalhes.tempoAbertura = supplier.sellerInfo?.openTime || '';
-        
+        try {
+            const supplier = data?.SHOP_CARD_PC || {};
+            detalhes.vendedor = supplier.storeName || '';
+            detalhes.avaliacaoVendedor = supplier.sellerPositiveRate ? (parseFloat(supplier.sellerPositiveRate) / 20) : 0;
+            detalhes.tempoAbertura = supplier.sellerInfo?.openTime || '';
+        } catch (e) {
+            logErro(`❌ Erro ao extrair vendedor do produto ${productId}: ${e.message}`);
+        }
+
         logSucesso(`✅ Parse completo do produto ${productId}`);
         return detalhes;
-        
+
     } catch (error) {
-        logErro(`❌ Erro ao fazer parse do JSON: ${error.message}`);
+        logErro(`❌ Erro inesperado no parse do produto ${productId}: ${error.message}`);
         return getDefaultProductDetails();
     }
 }
+
 
 // =================================
 // LIMPEZA E FINALIZAÇÃO
@@ -1582,50 +1689,86 @@ async function configurarInterceptacaoAPI(novaAba, productId) {
     let dadosAPI = null;
     let apiInterceptada = false;
     let tentativasAPI = 0;
-    
+    const alvo = String(productId || '').trim();
+
     const responseHandler = async (response) => {
-        if (response.url().includes('mtop.aliexpress.pdp.pc.query') && response.status() === 200) {
+        const url = response.url();
+        const status = response.status();
+
+        if (url.includes('mtop.aliexpress.pdp.pc.query') && status === 200) {
             try {
                 tentativasAPI++;
                 logInfo(`📡 Interceptando API para produto ${productId} (tentativa ${tentativasAPI})`);
-                
+
                 const rawText = await response.text();
-                let cleanText = rawText;
-                
-                // Limpeza do wrapper JSONP
-                cleanText = cleanText.replace(/^mtopjsonp\d*\(/, '').replace(/\)\s*$/, '');
-                
+
+                // 🔒 Validação: se o conteúdo não começar com JSON válido, abortar
+                if (!rawText.trim().startsWith('{') && !rawText.includes('mtopjsonp')) {
+                    logErro(`⚠️ Resposta não parece ser JSON válido para produto ${productId}`);
+                    return;
+                }
+
+                // 🔧 Limpeza do wrapper JSONP
+                let cleanText = rawText.replace(/^mtopjsonp\d*\(/, '').replace(/\)\s*$/, '');
+
                 const firstBrace = cleanText.indexOf('{');
                 if (firstBrace > 0) {
                     cleanText = cleanText.substring(firstBrace);
                 }
-                
+
                 const lastBrace = cleanText.lastIndexOf('}');
                 if (lastBrace > 0 && lastBrace < cleanText.length - 1) {
                     cleanText = cleanText.substring(0, lastBrace + 1);
                 }
-                
-                const jsonData = JSON.parse(cleanText);
-                dadosAPI = jsonData?.data?.result || {};
+
+                // 🚨 Tentativa segura de parse
+                let jsonData;
+                try {
+                    jsonData = JSON.parse(cleanText);
+                } catch (e) {
+                    logErro(`❌ Erro ao fazer JSON.parse para produto ${productId}: ${e.message}`);
+                    return;
+                }
+
+                // 🔍 Verificação da estrutura esperada
+                if (!jsonData?.data?.result || typeof jsonData.data.result !== 'object') {
+                    logErro(`⚠️ JSON parseado mas sem estrutura esperada (data.result) para produto ${productId}`);
+                    return;
+                }
+
+                // 🔐 Checagem de correspondência de productId
+                const result = jsonData.data.result;
+                const idFromResult = String(
+                    result?.priceModule?.productId ||
+                    result?.skuModule?.productId ||
+                    result?.infoModule?.productId ||
+                    result?.productId || ''
+                ).trim();
+
+                if (alvo && idFromResult && idFromResult !== alvo) {
+                    logErro(`⚠️ Interceptado productId diferente: esperado=${alvo} recebido=${idFromResult}. Ignorando resposta.`);
+                    return;
+                }
+
+                dadosAPI = result;
                 apiInterceptada = true;
                 logSucesso(`✅ API interceptada com sucesso para produto ${productId}`);
             } catch (e) {
-                logErro(`❌ Erro ao processar JSON da API: ${e.message}`);
+                logErro(`❌ Erro inesperado ao processar resposta da API para produto ${productId}: ${e.message}`);
             }
         }
     };
-    
-    // Configurar interceptação de múltiplas URLs da API
+
     const requestHandler = (request) => {
         const url = request.url();
         if (url.includes('mtop.aliexpress.pdp.pc.query')) {
             logInfo(`📤 Requisição API detectada para produto ${productId}: ${url.substring(0, 100)}...`);
         }
     };
-    
+
     novaAba.on('response', responseHandler);
     novaAba.on('request', requestHandler);
-    
+
     return {
         getDadosAPI: () => dadosAPI,
         isInterceptada: () => apiInterceptada,

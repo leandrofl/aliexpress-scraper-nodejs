@@ -3,7 +3,7 @@
  * Testa todas as funcionalidades implementadas baseadas nas sugestões do ChatGPT
  */
 
-import { calcularRiscoProduto, determinarMetodoValidacao, permiteValidacaoTextual, gerarRelatorioRisco } from '../utils/calculadora-risco.js';
+import { calcularRiscoProduto, determinarMetodoValidacao, permiteValidacaoTextual, gerarRelatorioRisco } from '../../utils/calculadora-risco.js';
 
 console.log('🧪 TESTANDO SISTEMA DE ANÁLISE DE RISCO\n');
 

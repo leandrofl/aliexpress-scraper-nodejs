@@ -7,7 +7,7 @@
 
 /**
  * Calcula o score de risco de um produto (0-100)
- * Baseado nas sugestões do ChatGPT
+ * Baseado nas sugestões do ChatGPT + melhorias semânticas
  * 
  * @param {Object} produto - Dados do produto
  * @returns {Object} { riscoFinal, pendenteRevisao, detalhesRisco }
@@ -22,27 +22,34 @@ export function calcularRiscoProduto(produto) {
         detalhes.push('Imagem não comparada ou sem match (+40)');
     }
 
-    // Critério 2: Nome com baixa cobertura/compatibilidade (+30 pontos)
-    const scoreTexto = produto.score_texto || 0;
-    if (scoreTexto < 60) {
+    // Critério 2: Score semântico/textual baixo (+30 pontos)
+    const scoreSemantico = produto.score_semantico || produto.score_texto || 0;
+    if (scoreSemantico < 60) {
         risco += 30;
-        detalhes.push(`Score texto baixo: ${scoreTexto}% (+30)`);
-    } else if (scoreTexto < 75) {
+        detalhes.push(`Score semântico baixo: ${scoreSemantico}% (+30)`);
+    } else if (scoreSemantico < 75) {
         risco += 15;
-        detalhes.push(`Score texto médio: ${scoreTexto}% (+15)`);
+        detalhes.push(`Score semântico médio: ${scoreSemantico}% (+15)`);
     }
 
-    // Critério 3: Margem baixa (+20 pontos)
-    const margemPercentual = produto.ratio_preco ? (produto.ratio_preco - 1) * 100 : 0;
-    if (margemPercentual < 100) {
+    // Critério 3: Desvio de preço alto (+20 pontos) - ChatGPT
+    const desvioPreco = produto.desvio_preco || 0;
+    if (desvioPreco > 250) {
         risco += 20;
-        detalhes.push(`Margem baixa: ${margemPercentual.toFixed(1)}% (+20)`);
-    } else if (margemPercentual < 200) {
+        detalhes.push(`Desvio preço muito alto: ${desvioPreco}% (+20)`);
+    } else if (desvioPreco > 200) {
         risco += 10;
-        detalhes.push(`Margem média: ${margemPercentual.toFixed(1)}% (+10)`);
+        detalhes.push(`Desvio preço alto: ${desvioPreco}% (+10)`);
     }
 
-    // Critério 4: Categoria sensível (+10 pontos)
+    // Critério 4: Margem de lucro baixa (+10 pontos) - ChatGPT
+    const margemLucro = produto.margem_lucro_rs || 0;
+    if (margemLucro < 50) {
+        risco += 10;
+        detalhes.push(`Margem lucro baixa: R$ ${margemLucro} (+10)`);
+    }
+
+    // Critério 5: Categoria sensível (+10 pontos)
     const categoriasSensiveis = ['eletrônicos', 'tecnologia', 'celulares', 'computadores'];
     if (categoriasSensiveis.some(cat => 
         produto.categoria?.toLowerCase().includes(cat)
@@ -51,26 +58,33 @@ export function calcularRiscoProduto(produto) {
         detalhes.push('Categoria sensível (+10)');
     }
 
-    // Critério 5: Erro na análise de imagem (+15 pontos)
+    // Critério 6: Erro na análise de imagem (+15 pontos)
     if (produto.imagem_erro) {
         risco += 15;
         detalhes.push(`Erro imagem: ${produto.imagem_erro} (+15)`);
     }
 
-    // Critério 6: Score total baixo do produto (+15 pontos)
+    // Critério 7: Score total do produto baixo (+15 pontos)
     const scoreTotal = produto.score_total || 0;
     if (scoreTotal < 50) {
         risco += 15;
         detalhes.push(`Score produto baixo: ${scoreTotal} (+15)`);
     }
 
+    // Critério 8: Método de análise de baixa confiança (+10 pontos)
+    if (produto.metodo_analise_titulo === 'textual_fallback') {
+        risco += 10;
+        detalhes.push('Análise por fallback textual (+10)');
+    }
+
     // Limitar a 100
     risco = Math.min(risco, 100);
 
-    // Determinar se precisa de revisão manual
+    // Determinar se precisa de revisão manual (ChatGPT)
     const pendenteRevisao = risco >= 50 || 
-                           (produto.match_por_texto && scoreTexto < 70) ||
-                           (margemPercentual > 500); // Margem muito alta também é suspeita
+                           (produto.aprovado_fallback_texto && scoreSemantico < 70) ||
+                           (desvioPreco > 300) || // Desvio muito suspeito
+                           (margemLucro > 1000); // Margem suspeita
 
     return {
         riscoFinal: risco,

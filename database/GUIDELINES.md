@@ -47,7 +47,7 @@ Manter todos os arquivos relacionados ao banco de dados organizados na pasta `/d
 - ❌ `package.json`
 
 ### Scripts Principais
-- ❌ `main.js`, `run-scraper.js` (execução principal)
+- ❌ `main.js` (execução principal)
 - ❌ Scripts de deploy ou CI/CD
 
 ### Documentação Geral

@@ -8,7 +8,7 @@
  */
 
 import { supabase } from './supabase-client.js';
-import { gerarHashProduto } from '../validation/duplicate-checker.js';
+import { gerarHashProduto } from '../utils/duplicate-checker.js';
 
 /**
  * Salvar produto completo com todas as melhorias implementadas

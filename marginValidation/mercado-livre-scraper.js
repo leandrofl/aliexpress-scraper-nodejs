@@ -14,6 +14,7 @@ import * as cheerio from 'cheerio';
 import { compararImagensPorHash } from '../utils/comparador-imagens.js';
 import { produtosSaoCompativeis } from '../utils/comparador-produtos.js';
 import { calcularRiscoProduto, determinarMetodoValidacao, permiteValidacaoTextual } from '../utils/calculadora-risco.js';
+import { compararSemantica, analisarProdutosSemantico, calcularEstatisticasPreco, calcularDesvioPreco } from '../utils/analisador-semantico.js';
 
 // 🛡 Melhoria 2: Configurar retry automático para falhas de rede
 axiosRetry(axios, {
@@ -90,86 +91,180 @@ export async function buscarMelhorProdutoML(produtoAli) {
       }
     }
 
-    // 🎯 FALLBACK TEXTUAL - Sugestão do ChatGPT
-    // Se não encontrou match por imagem, tentar verificação textual
+    // 🎯 FALLBACK TEXTUAL + SEMÂNTICO - Sugestão do ChatGPT aprimorada
+    // Se não encontrou match por imagem, tentar verificação semântica
     if (!melhorProduto && itens.length > 0) {
-      console.log('🔍 Nenhum match por imagem encontrado. Tentando fallback textual...');
+      console.log('🔍 Nenhum match por imagem encontrado. Tentando análise semântica...');
       
-      let melhorCompatibilidade = null;
-      let maiorScore = 0;
-
-      for (const item of itens) {
-        try {
-          // Verificar se categoria permite fallback textual
-          if (!permiteValidacaoTextual(produtoAli)) {
-            console.log('❌ Categoria não permite fallback textual');
-            continue;
-          }
+      // Calcular estatísticas de preço dos top 3 (ChatGPT)
+      const top3 = itens.slice(0, 3);
+      const estatisticasPreco = calcularEstatisticasPreco(top3);
+      
+      console.log(`📊 Preço médio ML (top 3): R$ ${estatisticasPreco.precoMedioML}`);
+      
+      // Análise semântica dos produtos
+      const analiseSemantica = await analisarProdutosSemantico(produtoAli, itens);
+      
+      if (analiseSemantica.melhorMatch && analiseSemantica.scoreSemantico >= 70) {
+        console.log(`🧠 Match semântico encontrado: Score ${analiseSemantica.scoreSemantico}%`);
+        
+        const produtoSelecionado = analiseSemantica.melhorMatch;
+        const desvioPreco = calcularDesvioPreco(produtoSelecionado.preco, produtoAli.preco);
+        
+        // Verificar se desvio de preço é aceitável (ChatGPT)
+        if (desvioPreco <= 250) {
+          console.log(`✅ Desvio de preço aceitável: ${desvioPreco}%`);
           
-          // Verificar compatibilidade textual
-          const compatibilidade = produtosSaoCompativeis(produtoAli, {
-            nome: item.nome,
-            preco: item.preco
-          });
-
-          if (compatibilidade.compatível && compatibilidade.score >= 60) {
-            // Verificar se preço está em faixa segura (2x a 5x do preço original)
-            const ratioPreco = item.preco / produtoAli.preco;
+          // Criar dados para análise de risco com novos campos
+          const dadosParaRisco = {
+            ...produtoAli,
+            imagem_comparada: false,
+            imagem_match: false,
+            score_imagem: 0,
+            score_semantico: analiseSemantica.scoreSemantico,
+            score_texto: analiseSemantica.scoreSemantico, // Compatibilidade
+            match_por_texto: true,
+            aprovado_fallback_texto: true,
+            desvio_preco: desvioPreco,
+            preco_medio_ml: estatisticasPreco.precoMedioML,
+            metodo_analise_titulo: analiseSemantica.metodoUsado,
+            fonte_de_verificacao: 'semantico'
+          };
+          
+          // Calcular risco final
+          const analiseRisco = calcularRiscoProduto(dadosParaRisco);
+          const metodoValidacao = determinarMetodoValidacao(dadosParaRisco);
+          
+          melhorProduto = {
+            ...produtoSelecionado,
+            similaridade: analiseSemantica.scoreSemantico,
+            // Campos de controle de qualidade expandidos (ChatGPT)
+            imagemComparada: false,
+            fonteDeVerificacao: 'semantico',
+            riscoImagem: true,
+            metodoValidacaoMargem: metodoValidacao,
+            scoreImagem: 0,
+            imagemMatch: false,
+            scoreTexto: analiseSemantica.scoreSemantico,
+            scoreSemantico: analiseSemantica.scoreSemantico,
+            matchPorTexto: true,
+            aprovadoFallbackTexto: true,
+            riscoFinal: analiseRisco.riscoFinal,
+            pendenteRevisao: analiseRisco.pendenteRevisao,
+            desvioPreco: desvioPreco,
+            precoMedioML: estatisticasPreco.precoMedioML,
+            metodoAnaliseTitulo: analiseSemantica.metodoUsado,
             
-            if (ratioPreco >= 2 && ratioPreco <= 5 && compatibilidade.score > maiorScore) {
-              maiorScore = compatibilidade.score;
-              
-              // Criar dados para análise de risco
-              const dadosParaRisco = {
-                ...produtoAli,
-                imagem_comparada: false,
-                imagem_match: false,
-                score_imagem: 0,
-                score_texto: compatibilidade.score,
-                match_por_texto: true,
-                ratio_preco: ratioPreco,
-                fonte_de_verificacao: 'texto'
-              };
-              
-              // Calcular risco
-              const analiseRisco = calcularRiscoProduto(dadosParaRisco);
-              const metodoValidacao = determinarMetodoValidacao(dadosParaRisco);
-              
-              melhorCompatibilidade = {
-                ...item,
-                similaridade: compatibilidade.score,
-                // Campos de controle de qualidade (ChatGPT)
-                imagemComparada: false,
-                fonteDeVerificacao: 'texto',
-                riscoImagem: true,
-                metodoValidacaoMargem: metodoValidacao,
-                scoreImagem: 0,
-                imagemMatch: false,
-                scoreTexto: compatibilidade.score,
-                matchPorTexto: true,
-                riscoFinal: analiseRisco.riscoFinal,
-                pendenteRevisao: analiseRisco.pendenteRevisao,
-                // Dados de compatibilidade expandidos
-                compatibilidadeTextual: {
-                  ...compatibilidade,
-                  detalhesRisco: analiseRisco.detalhesRisco,
-                  classificacao: analiseRisco.classificacaoRisco
-                },
-                ratioPreco: ratioPreco
-              };
+            // Dados de compatibilidade expandidos
+            compatibilidadeTextual: {
+              score: analiseSemantica.scoreSemantico,
+              motivo: analiseSemantica.analiseCompleta?.motivo || 'Análise semântica',
+              detalhesRisco: analiseRisco.detalhesRisco,
+              classificacao: analiseRisco.classificacaoRisco,
+              metodoAnalise: analiseSemantica.metodoUsado,
+              estatisticasPreco: estatisticasPreco
             }
-          }
-        } catch (compatError) {
-          console.warn('Erro na verificação de compatibilidade:', compatError.message);
+          };
+          
+          console.log(`✅ Produto aprovado via análise semântica`);
+          console.log(`⚠️ Risco: ${analiseRisco.classificacaoRisco} (${analiseRisco.riscoFinal}%)`);
+          
+        } else {
+          console.log(`❌ Desvio de preço muito alto: ${desvioPreco}% (máximo 250%)`);
         }
+      } else if (analiseSemantica.scoreSemantico > 0) {
+        console.log(`❌ Score semântico insuficiente: ${analiseSemantica.scoreSemantico}% (mínimo 70%)`);
       }
+      
+      // Fallback para análise textual tradicional se semântica falhar
+      if (!melhorProduto) {
+        console.log('🔄 Tentando fallback textual tradicional...');
+        
+        let melhorCompatibilidade = null;
+        let maiorScore = 0;
 
-      if (melhorCompatibilidade) {
-        melhorProduto = melhorCompatibilidade;
-        console.log(`✅ Fallback textual encontrou match: "${melhorProduto.nome}" (Score: ${maiorScore}%)`);
-        console.log(`⚠️ ATENÇÃO: Produto marcado com risco de imagem para revisão`);
-      } else {
-        console.log('❌ Nenhum produto compatível encontrado nem por imagem nem por texto');
+        for (const item of itens) {
+          try {
+            // Verificar se categoria permite fallback textual
+            if (!permiteValidacaoTextual(produtoAli)) {
+              console.log('❌ Categoria não permite fallback textual');
+              continue;
+            }
+            
+            // Verificar compatibilidade textual
+            const compatibilidade = produtosSaoCompativeis(produtoAli, {
+              nome: item.nome,
+              preco: item.preco
+            });
+
+            if (compatibilidade.compatível && compatibilidade.score >= 60) {
+              const desvioPreco = calcularDesvioPreco(item.preco, produtoAli.preco);
+              
+              // Validar desvio de preço (ChatGPT)
+              if (desvioPreco <= 250 && compatibilidade.score > maiorScore) {
+                maiorScore = compatibilidade.score;
+                
+                // Criar dados para análise de risco
+                const dadosParaRisco = {
+                  ...produtoAli,
+                  imagem_comparada: false,
+                  imagem_match: false,
+                  score_imagem: 0,
+                  score_texto: compatibilidade.score,
+                  match_por_texto: true,
+                  aprovado_fallback_texto: true,
+                  desvio_preco: desvioPreco,
+                  preco_medio_ml: estatisticasPreco.precoMedioML,
+                  metodo_analise_titulo: 'textual_fallback',
+                  fonte_de_verificacao: 'texto'
+                };
+                
+                // Calcular risco
+                const analiseRisco = calcularRiscoProduto(dadosParaRisco);
+                const metodoValidacao = determinarMetodoValidacao(dadosParaRisco);
+                
+                melhorCompatibilidade = {
+                  ...item,
+                  similaridade: compatibilidade.score,
+                  // Campos de controle de qualidade expandidos
+                  imagemComparada: false,
+                  fonteDeVerificacao: 'texto',
+                  riscoImagem: true,
+                  metodoValidacaoMargem: metodoValidacao,
+                  scoreImagem: 0,
+                  imagemMatch: false,
+                  scoreTexto: compatibilidade.score,
+                  scoreSemantico: 0,
+                  matchPorTexto: true,
+                  aprovadoFallbackTexto: true,
+                  riscoFinal: analiseRisco.riscoFinal,
+                  pendenteRevisao: analiseRisco.pendenteRevisao,
+                  desvioPreco: desvioPreco,
+                  precoMedioML: estatisticasPreco.precoMedioML,
+                  metodoAnaliseTitulo: 'textual_fallback',
+                  
+                  // Dados de compatibilidade expandidos
+                  compatibilidadeTextual: {
+                    ...compatibilidade,
+                    detalhesRisco: analiseRisco.detalhesRisco,
+                    classificacao: analiseRisco.classificacaoRisco,
+                    estatisticasPreco: estatisticasPreco
+                  }
+                };
+              }
+            }
+          } catch (compatError) {
+            console.warn('Erro na verificação de compatibilidade:', compatError.message);
+          }
+        }
+
+        if (melhorCompatibilidade) {
+          melhorProduto = melhorCompatibilidade;
+          console.log(`✅ Fallback textual encontrou match: "${melhorProduto.nome}" (Score: ${maiorScore}%)`);
+          console.log(`⚠️ ATENÇÃO: Produto marcado com risco para revisão`);
+        } else {
+          console.log('❌ Nenhum produto compatível encontrado (imagem, semântica ou textual)');
+        }
       }
     }
 

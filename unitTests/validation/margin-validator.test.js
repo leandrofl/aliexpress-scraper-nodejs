@@ -120,18 +120,26 @@ export function testCasosExtremos() {
   try {
     const precoMuitoBaixo = 0.50;
     const precoVendaAlto = 180.00;
-    
-    const resultado = calcularMargemOtimizada(precoMuitoBaixo, precoVendaAlto);
-    
+    // Ajuste: usar assinatura correta (objeto produto)
+    const produtoExtremo = {
+      precoUSD: precoMuitoBaixo,
+      precoVendaBR: precoVendaAlto
+    };
+
+    const resultado = calcularMargemOtimizada(produtoExtremo);
+
     const teste = {
       nome: "Casos Extremos",
-      passou: resultado && typeof resultado.margemRealistaPercentual === 'number',
+      // Valida se retornou estrutura esperada do mock (margemLiquida em % e flag viable)
+      passou: !!resultado && typeof resultado.margemLiquida === 'number' && typeof resultado.viable === 'boolean',
       detalhes: {
         precoUSD: precoMuitoBaixo,
         precoVenda: precoVendaAlto,
-        margemCalculada: resultado?.margemRealistaPercentual || 'N/A',
+        margemCalculadaPercentual: typeof resultado?.margemLiquida === 'number' ? resultado.margemLiquida.toFixed(2) + '%' : 'N/A',
+        precoRealFinal: resultado?.precoRealFinal ?? 'N/A',
+        viable: resultado?.viable ?? 'N/A',
         resultadoValido: resultado !== null && resultado !== undefined,
-        temMargem: typeof resultado?.margemRealistaPercentual === 'number'
+        temMargem: typeof resultado?.margemLiquida === 'number'
       }
     };
     

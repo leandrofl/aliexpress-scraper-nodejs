@@ -11,12 +11,12 @@
 - **AGIR IMEDIATAMENTE** na sequência lógica da tarefa
 
 #### 2. **Organização de Arquivos**
-- Sempre mover arquivos .md para pasta `docs/`
-- Mover arquivos de teste para `unitTests/`
-- **MOVER arquivos de teste temporários** da raiz para `unitTests/exploratory/`
-- Consolidar duplicatas sem perguntar
-- **REMOVER AUTOMATICAMENTE** arquivos v2, backup, old, bak após validação
-- Manter estrutura modular limpa
+- Documentação: arquivos `.md` devem ficar SEMPRE em `docs/`. Se surgir algo fora, mover para `docs/` ou apagar se não fizer sentido.
+- Testes: arquivos de teste devem ficar SEMPRE em `unitTests/` (por categoria). Não criar `tests/`. Testes temporários devem ser apagados após uso ou movidos para `unitTests/` (geralmente `unitTests/exploratory/`).
+- Banco de dados: arquivos SQL/MD de banco devem ficar em `database/`.
+- Consolidar duplicatas sem perguntar.
+- Remover automaticamente arquivos v2/backup/old/bak após validação.
+- Manter estrutura modular limpa.
 
 #### 3. **Documentação**
 - Sempre criar/atualizar README.md após mudanças estruturais
@@ -51,7 +51,9 @@
 
 - **NÃO** interromper fluxo com perguntas desnecessárias
 - **NÃO** explicar o que é óbvio
-- **NÃO** deixar arquivos de teste temporários na raiz
+- **NÃO** deixar arquivos de teste temporários na raiz (nem recriar pasta `tests/`)
+- **NÃO** criar `.env.example` (o projeto já possui `.env`)
+- **SIM** manter arquivos de banco somente em `database/`
 - **SIM** ser proativo em organizações
 - **SIM** manter padrões estabelecidos
 - **SIM** documentar decisões importantes

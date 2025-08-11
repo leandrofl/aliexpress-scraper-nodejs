@@ -89,3 +89,9 @@ screenshots/
 
 # Test files temporários
 test-config.js
+
+# Browser user data (Puppeteer persistent profile)
+user_data/
+
+# Runtime dedup storage (do not version control)
+database/produtos-processados.json

@@ -92,6 +92,6 @@ npm run scrape:full
 
 **📍 Localização dos Arquivos Principais:**
 - **Configuração**: `/.env` (raiz)
-- **Execução**: `/run-scraper.js` (raiz) 
+- **Execução**: `/main.js` (raiz)
 - **Database**: `/database/*` (esta pasta)
 - **Docs Gerais**: `/README.md` (raiz)

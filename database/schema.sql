@@ -75,12 +75,14 @@ CREATE TABLE IF NOT EXISTS produtos (
   risco_final integer DEFAULT 0 CHECK (risco_final >= 0 AND risco_final <= 100),
   pendente_revisao boolean DEFAULT false,
   
-  -- 🛒 Dados detalhados Mercado Livre
+  -- 🛒 Dados detalhados Mercado Livre (ChatGPT melhorias)
   preco_mercado_livre numeric(10,2),
+  preco_medio_ml numeric(10,2),        -- Preço médio dos top 3
   link_produto_ml text,
   imagem_ml text,
   fonte_imagem_ml text DEFAULT 'ml',
   termos_busca_ml text,
+  desvio_preco numeric(8,2),           -- Desvio percentual do preço
   
   -- 💰 Análise financeira detalhada
   preco_ali_usd numeric(10,2),
@@ -89,6 +91,11 @@ CREATE TABLE IF NOT EXISTS produtos (
   preco_total_ali_brl numeric(10,2),
   margem_lucro_rs numeric(10,2),
   moeda_referencia text DEFAULT 'BRL' CHECK (moeda_referencia IN ('USD', 'BRL')),
+  
+  -- 🧠 Campos de análise semântica (ChatGPT)
+  aprovado_fallback_texto boolean DEFAULT false,
+  score_semantico integer DEFAULT 0 CHECK (score_semantico >= 0 AND score_semantico <= 100),
+  metodo_analise_titulo text DEFAULT 'nenhum' CHECK (metodo_analise_titulo IN ('semantico', 'textual_fallback', 'nenhum')),
   
   -- ⏰ Timestamps
   primeira_coleta_em timestamptz DEFAULT now(),

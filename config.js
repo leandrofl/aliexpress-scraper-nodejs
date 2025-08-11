@@ -16,9 +16,8 @@
  */
 
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { existsSync } from 'fs';
+import path from 'path';
 
 // =================================
 // INICIALIZAÇÃO E CARREGAMENTO DO .ENV
@@ -30,13 +29,10 @@ import { existsSync } from 'fs';
  */
 let envLoaded = false;
 try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const envPath = join(__dirname, '.env');
-    
-    // Verificar se arquivo .env existe
+    // Sempre busca o .env na raiz do projeto
+    const envPath = path.resolve(process.cwd(), '.env');
     if (!existsSync(envPath)) {
-        console.warn('⚠️  Arquivo .env não encontrado. Usando configurações padrão.');
+        console.warn('⚠️  Arquivo .env não encontrado na raiz do projeto. Usando configurações padrão.');
         console.warn(`📁 Procurado em: ${envPath}`);
     } else {
         const result = dotenv.config({ path: envPath });
