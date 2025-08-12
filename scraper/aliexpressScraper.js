@@ -19,7 +19,7 @@
 
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { CHROME_PATH } from '../config.js';
+import { CHROME_PATH, HEADLESS } from '../config.js';
 import {
   scrollUntilAllProductsLoaded,
   tirarScreenshot,
@@ -161,7 +161,7 @@ export async function setupBrowser() {
 
         // Configurações do browser
         const browserConfig = {
-            headless: false, // Modo visível para debug
+            headless: HEADLESS,
             devtools: false,
             slowMo: 150, // Delay entre ações para parecer mais humano
             args: launchArgs,
@@ -483,7 +483,12 @@ export async function processCategory(browser, categoria) {
                 logInfo(`🔍 ML ${i + 1}/${produtosOriginais.length}: ${produto.nome || produto.product_id}`);
 
                 // Buscar dados reais do Mercado Livre (passando o produto inteiro)
-                const dadosML = await buscarDadosMercadoLivre(browser, produto);
+                // Protegemos com timeout local para não travar a categoria
+                const ML_TIMEOUT_MS = 45000;
+                const dadosML = await Promise.race([
+                    buscarDadosMercadoLivre(browser, produto),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout ML por produto')), ML_TIMEOUT_MS))
+                ]);
 
                 // Adicionar dados ML ao produto
                 produto.dadosMercadoLivre = dadosML;
@@ -636,10 +641,9 @@ export async function processCategory(browser, categoria) {
         for (const produto of produtosOrdenados) {
             try {
                 // Verificar se já existe (dupla verificação DB)
-                const existeNoDB = await verificarDuplicidadeDB(produto.id);
-                
-                if (existeNoDB) {
-                    logInfo(`⚠️ Produto ${produto.nome} já existe no banco - pulando`);
+                const verifDB = await verificarDuplicidadeDB(produto);
+                if (verifDB && verifDB.isDuplicado) {
+                        logInfo(`⚠️ Produto ${produto.nome} já existe no banco - pulando`);
                     continue;
                 }
                 
@@ -650,8 +654,8 @@ export async function processCategory(browser, categoria) {
                     categoria: categoria,
                     preco_aliexpress: produto.preco,
                     descricao: produto.descricao || '',
-                    url_imagem: produto.imagem,
-                    url_aliexpress: produto.url,
+                    url_imagem: produto.imagem || produto.imagemURL || (Array.isArray(produto.imagens) ? produto.imagens[0] : undefined),
+                    url_aliexpress: produto.url || produto.href,
                     avaliacoes: produto.avaliacoes || 0,
                     rating: produto.rating || 0,
                     vendidos: produto.vendidos || 0,
@@ -1303,6 +1307,13 @@ export async function extractProductsFromPage(page, categoria, pagina, produtosE
  * @returns {Promise<Object>} Detalhes extraídos do produto
  */
 export async function extractProductDetails(browser, produto) {
+    // Variáveis compartilhadas no escopo da função para permitir limpeza em finally
+    let novaAba = null;
+    let apiConfig = null;
+    let detalhes = getDefaultProductDetails();
+    let dadosAPI = null;
+    let popupsAbertos = [];
+
     try {
         // Validação de entrada
         if (!browser || !produto) {
@@ -1312,14 +1323,10 @@ export async function extractProductDetails(browser, produto) {
         // Usar product_id se disponível, senão extrair da URL
         let productId = produto.product_id;
         let urlProduto = produto.url || produto.href;
-    // Variáveis compartilhadas no escopo da função
-    let novaAba;
-    let apiConfig;
-    let detalhes = getDefaultProductDetails();
-    let dadosAPI = null;
         
         if (!productId && urlProduto) {
-            const productIdMatch = urlProduto.match(/\/item\/(\d+)\.html/);
+            // Suporta tanto /item/{id}.html quanto /i/{id}.html
+            const productIdMatch = urlProduto.match(/\/(?:item|i)\/(\d+)\.html/);
             if (productIdMatch) {
                 productId = productIdMatch[1];
             }
@@ -1356,6 +1363,12 @@ export async function extractProductDetails(browser, produto) {
             }
 
             novaAba = await browser.newPage();
+            // Capturar popups eventualmente abertos para garantir limpeza posterior
+            try {
+                novaAba.on('popup', (p) => {
+                    popupsAbertos.push(p);
+                });
+            } catch (_) { /* ambiente pode não suportar */ }
             logInfo(`✅ Nova aba criada com sucesso para produto ${productId}`);
         } catch (pageError) {
             logErro(`❌ Erro ao criar nova aba: ${pageError.message}`);
@@ -1407,30 +1420,93 @@ export async function extractProductDetails(browser, produto) {
             // Esperar resultados carregarem
             await delay(2000);
 
-            // Tentar encontrar e clicar no produto correto
+            // Tentar encontrar link do produto correto e navegar na MESMA aba (evita abrir nova guia)
             let produtoEncontrado = false;
             try {
-                const produtoSelector = `a[href*="/item/${productId}.html"]`;
-                await novaAba.waitForSelector(produtoSelector, { timeout: 8000 });
-                await novaAba.click(produtoSelector);
+                const candidateSelectors = [
+                    `a[href*="/item/${productId}.html"]`,
+                    `a[href*="/i/${productId}.html"]`,
+                    `a[data-product-id="${productId}"]`,
+                    // genérico: qualquer âncora cujo href contenha o id
+                    `a[href*="${productId}"]`
+                ];
+
+                let navigated = false;
+                for (const sel of candidateSelectors) {
+                    try {
+                        const handle = await novaAba.waitForSelector(sel, { timeout: 4000 });
+                        if (handle) {
+                            // Obter href absoluto do link e navegar diretamente
+                            const href = await novaAba.evaluate((el) => {
+                                try {
+                                    const link = el.getAttribute('href') || '';
+                                    if (!link) return '';
+                                    const a = document.createElement('a');
+                                    a.href = link;
+                                    // Converter para URL absoluta baseada no origin atual
+                                    const urlAbs = new URL(a.href, location.origin).href;
+                                    return urlAbs;
+                                } catch { return ''; }
+                            }, handle);
+                            if (href && typeof href === 'string') {
+                                await novaAba.goto(href, { waitUntil: 'domcontentloaded', timeout: 25000 });
+                                navigated = true;
+                                break;
+                            }
+                        }
+                    } catch (_eSel) { /* tenta próximo seletor */ }
+                }
+
+                // Última tentativa: procurar via evaluate e navegar com href absoluto
+                if (!navigated) {
+                    const hrefEval = await novaAba.evaluate((id) => {
+                        const anchor = Array.from(document.querySelectorAll('a')).find(a => (a.getAttribute('href') || '').includes(id));
+                        if (!anchor) return '';
+                        try {
+                            const urlAbs = new URL(anchor.getAttribute('href'), location.origin).href;
+                            return urlAbs;
+                        } catch { return anchor.getAttribute('href') || ''; }
+                    }, productId);
+                    if (hrefEval) {
+                        await novaAba.goto(hrefEval, { waitUntil: 'domcontentloaded', timeout: 25000 });
+                        navigated = true;
+                    }
+                    if (!navigated) throw new Error('Nenhum seletor compatível encontrado para o produto');
+                }
+
                 produtoEncontrado = true;
                 logInfo(`✅ Produto ${productId} encontrado e clicado nos resultados de busca.`);
             } catch (clickError) {
                 logErro(`❌ Produto ${productId} não encontrado nos resultados de busca: ${clickError.message}`);
-                // Fallback: tentar abrir diretamente a PDP do produto
-                try {
-                    const fallbackUrl = (urlProduto && urlProduto.includes('/item/'))
-                        ? urlProduto
-                        : `https://pt.aliexpress.com/item/${productId}.html`;
-                    await novaAba.goto(fallbackUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-                    // Pequena espera para disparar requests da PDP
-                    await delay(1500);
-                    produtoEncontrado = true;
-                    logInfo(`🔗 PDP aberta via fallback para produto ${productId}`);
-                } catch (gotoErr) {
-                    logErro(`❌ Falha no fallback de abertura da PDP para ${productId}: ${gotoErr.message}`);
+                // Fallback: tentar abrir diretamente a PDP do produto com múltiplas variações
+                const fallbackCandidates = [];
+                if (urlProduto) fallbackCandidates.push(urlProduto);
+                fallbackCandidates.push(
+                    `https://pt.aliexpress.com/item/${productId}.html`,
+                    `https://www.aliexpress.com/item/${productId}.html`,
+                    `https://pt.aliexpress.com/i/${productId}.html`,
+                    `https://www.aliexpress.com/i/${productId}.html`
+                );
+
+                let abriu = false;
+                let ultimoErro = null;
+                for (const url of fallbackCandidates) {
+                    try {
+                        await novaAba.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                        await delay(1500);
+                        abriu = true;
+                        logInfo(`🔗 PDP aberta via fallback: ${url}`);
+                        break;
+                    } catch (err) {
+                        ultimoErro = err;
+                        continue;
+                    }
+                }
+                if (!abriu) {
+                    logErro(`❌ Falha no fallback de abertura da PDP para ${productId}: ${ultimoErro?.message || 'sem detalhe'}`);
                     return getDefaultProductDetails();
                 }
+                produtoEncontrado = true;
             }
 
             // Esperar a navegação para a página de detalhes
@@ -1444,14 +1520,7 @@ export async function extractProductDetails(browser, produto) {
     // detalhes já foi declarado anteriormente, apenas atribuir
     dadosAPI = apiConfig.getDadosAPI();
 
-        if (dadosAPI && apiConfig.isInterceptada()) {
-            // Logar JSON interceptado para debug do campo productId
-            try {
-                logInfo(`[DEBUG] JSON interceptado para produto ${productId}:`);
-                logInfo(JSON.stringify(dadosAPI, null, 2));
-            } catch (logJsonError) {
-                logErro(`[DEBUG] Falha ao logar JSON interceptado: ${logJsonError.message}`);
-            }
+    if (dadosAPI && apiConfig.isInterceptada()) {
             // Parse dos dados da API seguindo a lógica otimizada
             if (typeof dadosAPI === 'object' && dadosAPI !== null && Object.keys(dadosAPI).length > 0) {
                 try {
@@ -1463,7 +1532,6 @@ export async function extractProductDetails(browser, produto) {
             } else {
                 logErro(`❌ Dados da API inválidos ou vazios para produto ${productId}`);
             }
-            logSucesso(`📊 Dados extraídos via API para produto ${productId}`);
         } else {
             // Fallback melhorado: tentar extrair dados do DOM
             logInfo(`⚠️ API não interceptada (${apiConfig.getTentativas()} tentativas), usando fallback DOM para ${productId}`);
@@ -1496,58 +1564,38 @@ export async function extractProductDetails(browser, produto) {
             }
         }
 
-        // Limpar listeners de API
-        try {
-            if (apiConfig && apiConfig.cleanup) {
-                apiConfig.cleanup();
-                logInfo(`🧹 Listeners de API removidos para produto ${productId}`);
-            }
-        } catch (cleanupListenerError) {
-            // Ignora erro de limpeza de listeners
-        }
-
-        // Fechar aba de forma garantida
-        try {
-            if (novaAba && !novaAba.isClosed()) {
-                await novaAba.close();
-                logInfo(`✅ Aba do produto ${productId} fechada com sucesso`);
-            }
-        } catch (closeError) {
-            logErro(`⚠️ Erro ao fechar aba: ${closeError.message}`);
-            try {
-                if (novaAba) {
-                    await novaAba.evaluate(() => window.close());
-                }
-            } catch (forceCloseError) {
-                // Última tentativa ignorada
-            }
-        }
-
     return detalhes;
 
     } catch (error) {
         logErro(`💥 Erro ao extrair detalhes do produto: ${error.message}`);
-        
-        // Limpar listeners de API mesmo em caso de erro
+        return getDefaultProductDetails();
+    } finally {
+        // Limpeza garantida de listeners da API
         try {
-            if (apiConfig && apiConfig.cleanup) {
+            if (apiConfig && typeof apiConfig.cleanup === 'function') {
                 apiConfig.cleanup();
+                logInfo('🧹 Listeners de API removidos (finally)');
             }
-        } catch (cleanupListenerError) {
-            // Ignora erro de limpeza de listeners
-        }
-        
-        // Garantir que a aba seja fechada mesmo em caso de erro
+        } catch (_) { /* noop */ }
+
+        // Fechar quaisquer popups capturados
+        try {
+            for (const p of popupsAbertos) {
+                if (p && !p.isClosed()) {
+                    await p.close();
+                }
+            }
+        } catch (_) { /* noop */ }
+
+        // Fechamento garantido da aba mesmo em retornos antecipados
         try {
             if (novaAba && !novaAba.isClosed()) {
                 await novaAba.close();
-                logInfo(`🧹 Aba fechada após erro`);
+                logInfo('✅ Aba de produto fechada (finally)');
             }
-        } catch (cleanupError) {
-            // Ignora erro de limpeza
+        } catch (e) {
+            logErro(`⚠️ Erro ao fechar aba no finally: ${e.message}`);
         }
-        
-        return getDefaultProductDetails();
     }
 }
 
@@ -1738,15 +1786,23 @@ async function configurarInterceptacaoAPI(novaAba, productId) {
 
                 // 🔐 Checagem de correspondência de productId
                 const result = jsonData.data.result;
-                const idFromResult = String(
+                // Tenta capturar productId por múltiplos caminhos
+                let idFromResult = String(
                     result?.priceModule?.productId ||
                     result?.skuModule?.productId ||
                     result?.infoModule?.productId ||
                     result?.productId || ''
                 ).trim();
+                if (!idFromResult && result?.pageUrl) {
+                    const m = String(result.pageUrl).match(/\/(?:item|i)\/(\d+)\.html/);
+                    if (m) idFromResult = m[1];
+                }
 
+                // Regras de aceitação:
+                // - Se ambos existirem e forem diferentes, ignore
+                // - Se um dos dois estiver vazio, aceite (pode ser página carregada via fallback)
                 if (alvo && idFromResult && idFromResult !== alvo) {
-                    logErro(`⚠️ Interceptado productId diferente: esperado=${alvo} recebido=${idFromResult}. Ignorando resposta.`);
+                    logErro(`⚠️ Interceptado productId diferente: esperado=${alvo} recebido=${idFromResult}. Ignorando esta resposta.`);
                     return;
                 }
 

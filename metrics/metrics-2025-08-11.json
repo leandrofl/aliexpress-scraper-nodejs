@@ -1,0 +1,84 @@
+{
+  "sessao": {
+    "id": "1754928689531",
+    "inicio": "2025-08-11T16:11:29.531Z",
+    "categoria": "Casa e Cozinha",
+    "configuracao": {
+      "maxProdutos": 10,
+      "maxPaginas": 999,
+      "targetProdutos": 5,
+      "filtrosAtivos": [
+        "quantitativo",
+        "qualitativo",
+        "margem",
+        "duplicidade"
+      ]
+    },
+    "fim": "2025-08-11T16:18:32.680Z",
+    "duracaoTotal": 423149
+  },
+  "produtos": {
+    "coletados": 0,
+    "processados": 9,
+    "aprovadosQuantitativo": 9,
+    "aprovadosQualitativo": 0,
+    "aprovadosFinal": 0,
+    "duplicados": 0,
+    "comErro": 1,
+    "traduzidos": 0,
+    "comMatchML": 0,
+    "semImagem": 9,
+    "taxaAprovacaoQuantitativa": 100,
+    "taxaAprovacaoQualitativa": 0,
+    "taxaAprovacaoFinal": 0,
+    "taxaDuplicacao": 0
+  },
+  "filtros": {
+    "reprovadosPorPreco": 0,
+    "reprovadosPorVendas": 0,
+    "reprovadosPorAvaliacoes": 0,
+    "reprovadosPorFrete": 0,
+    "reprovadosPorEnvio": 0,
+    "reprovadosPorMargem": 9,
+    "reprovadosPorQualitativo": 9
+  },
+  "tempos": {
+    "medioPorProduto": 0,
+    "totalProcessamento": 0,
+    "tradução": 0,
+    "buscaML": 0,
+    "analiseImagem": 0,
+    "filtrosQuantitativos": 0,
+    "filtrosQualitativos": 0
+  },
+  "mercadoLivre": {
+    "buscasRealizadas": 0,
+    "produtosEncontrados": 0,
+    "errosDeRede": 0,
+    "rateLimits": 0,
+    "tempoMedioBusca": 0
+  },
+  "qualidade": {
+    "scoresMedio": 25,
+    "distribuicaoScores": {
+      "bronze": 9,
+      "prata": 0,
+      "ouro": 0,
+      "diamante": 0
+    },
+    "produtosEstrela": 0,
+    "margemMedia": 0
+  },
+  "erros": [
+    {
+      "timestamp": "2025-08-11T16:18:12.202Z",
+      "tipo": "duplicidade",
+      "mensagem": "1 produtos duplicados removidos",
+      "contexto": {
+        "totalInput": 10,
+        "novos": 9,
+        "duplicados": 1
+      }
+    }
+  ]
+}

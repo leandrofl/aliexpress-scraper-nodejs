@@ -11,6 +11,26 @@
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "Run AliExpress Scraper",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"main.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run AliExpress Scraper",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"main.js"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

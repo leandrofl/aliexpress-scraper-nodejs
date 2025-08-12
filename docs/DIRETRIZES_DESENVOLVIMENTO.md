@@ -72,3 +72,46 @@
 **Criado em**: 07/08/2025  
 **Objetivo**: Manter consistência e eficiência no desenvolvimento  
 **Status**: 🔄 Diretrizes ativas
+
+## 🧭 Diretrizes adicionais: MVP Shopify agora, SaaS depois
+
+### 1) Objetivos de produto
+- MVP: alimentar catálogo Shopify (dropship AliExpress → ML verificação de preço/margem).
+- Futuro: oferecer o scraper como SaaS multi-tenant (licenças para terceiros).
+
+### 2) Políticas de “revisão crítica” (não concordar automaticamente)
+- Sempre avaliar sugestões sob 2 perspectivas:
+	- Especialista em dropshipping (demanda, margem, lead time, devoluções, restrições de categoria).
+	- Especialista em scraping Node.js (robustez, anti-bot, performance, manutenção, custo).
+- Em cada mudança, responder com:
+	- Riscos e trade-offs.
+	- Alternativas de menor risco e experimento rápido recomendado.
+
+### 3) Requisitos de SaaS-readiness (desde já)
+- Configurações 100% via variáveis de ambiente; nada hardcoded.
+- Isolar integrações (Shopify, Supabase, etc.) atrás de interfaces; permitir “stubs” para SaaS.
+- Rate limiting, backoff e quotas por “tenantId”.
+- Logs estruturados (JSON) com correlationId/tenantId (sem PII).
+- Feature flags: ML_DEBUG_ARTIFACTS, HEADLESS, MAX_CONCURRENCY, TIMEOUTS_MS.
+- Observabilidade mínima: métricas de sucesso/falha por etapa (navegar, extrair, comparar, enriquecer, PDP).
+
+### 4) Scraping resiliente no ML
+- Ordem visual: DOM-first. Complemento: ld+json. Fallback: __PRELOADED_STATE__. Último recurso: HTTP (axios+cheerio).
+- IDs MLB por regex /MLB-?(\d+)/; normalizar URLs (remover queries longas).
+- Ad type: enriquecer via printed_result quando disponível.
+- Não travar em preço ausente (price_brl: null); PDP é a fonte canônica de preço/imagens.
+
+### 5) Artefatos e debug
+- Por padrão: não salvar HTML/JSON/screenshot. Habilitar só com ML_DEBUG_ARTIFACTS=true.
+- Quando ativo: salvar em output/ com timestamp; nunca em produção multi-tenant.
+
+### 6) Pipeline de qualificação (resumo)
+- Buscar top-N; abrir PDP do top-N para imagens grandes; comparar imagem+título (score final ≥ 0.65).
+- Estatísticas de preço e margem com base no top 3; ML preço é referência para margem.
+
+### 7) Performance e limites
+- Paralelizar até MAX_CONCURRENCY seguro; respeitar rate-limit e randomizar headers.
+- Retries com jitter; tempos configuráveis.
+
+---
+Atualizado: 11/08/2025 — inclusão de diretrizes MVP→SaaS e revisão crítica.

@@ -70,5 +70,35 @@
                 "<node_internals>/**"
             ]
         }
-    ]
-}
+            ,
+            {
+                "name": "🛠️ Debug test-ml-search.js",
+                "type": "node",
+                "request": "launch",
+                "program": "${workspaceFolder}/scripts/test-ml-search.js",
+                "console": "integratedTerminal",
+                "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
+                "env": {
+                    "NODE_ENV": "development"
+                },
+                "skipFiles": [
+                    "<node_internals>/**"
+                ]
+            }
+        ,
+        {
+            "name": "📈 Debug validate-ali-ml-run.js",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/validate-ali-ml-run.js",
+            "console": "integratedTerminal",
+            "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        }
+        ]
+    }

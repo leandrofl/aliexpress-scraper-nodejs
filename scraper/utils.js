@@ -256,7 +256,7 @@ export const slugify = (str) => {
     const MAX_SLUG_LENGTH = 100;
     if (resultado.length > MAX_SLUG_LENGTH) {
       const slugTruncado = resultado.substring(0, MAX_SLUG_LENGTH).replace(/-+$/, '');
-      console.log(`📏 Slug truncado de ${resultado.length} para ${slugTruncado.length} caracteres`);
+      console.debug?.(`📏 Slug truncado de ${resultado.length} para ${slugTruncado.length} caracteres`);
       return slugTruncado;
     }
     

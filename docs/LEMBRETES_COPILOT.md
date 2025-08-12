@@ -10,6 +10,8 @@
 - [ ] Verifiquei se é um comando "Continue"?
 - [ ] Consultei diretrizes se necessário?
 - [ ] Vou agir sem confirmar tarefas óbvias?
+ - [ ] Apliquei “revisão crítica” (dropship + scraping)?
+ - [ ] Considerei MVP Shopify agora e SaaS no futuro?
 
 ### 🎯 Comandos de Ação Direta
 - **"Continue"** → Continuar tarefa imediatamente
@@ -22,6 +24,12 @@
 2. **Verificar** → Consultar diretrizes se necessário  
 3. **Agir** → Executar sem hesitar
 4. **Reportar** → Resultado conciso
+
+### 🧭 Padrão de resposta em “revisão crítica”
+- Parecer curto: aprovo/contesto (com grau de confiança)
+- Riscos e trade-offs (negócio + técnico)
+- Alternativas e experimento rápido sugerido
+- Indicadores de sucesso e rollback
 
 ---
 **IMPORTANTE**: Este arquivo deve ser consultado sempre que houver dúvida sobre comportamento esperado.
