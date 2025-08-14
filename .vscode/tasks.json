@@ -31,6 +31,89 @@
 			],
 			"isBackground": false,
 			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run ML test runner",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-ml-search.js"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

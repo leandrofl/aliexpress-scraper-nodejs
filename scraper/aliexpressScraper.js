@@ -138,6 +138,15 @@ export async function setupBrowser() {
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             
+            // ⚠️ Hotfix de renderização:
+            '--disable-gpu',                       // desliga aceleração de hardware
+            '--use-angle=swiftshader',             // força ANGLE software
+            '--use-gl=swiftshader',                // força GL software
+            '--disable-direct-composition',        // corrige telas brancas/pretas no Windows
+            '--disable-backgrounding-occluded-windows', // não “pausa” janelas fora de foco
+            '--disable-features=CalculateNativeWinOcclusion',
+            '--force-color-profile=srgb',
+
             // Evasão de detecção
             '--disable-blink-features=AutomationControlled',
             '--disable-features=VizDisplayCompositor',
@@ -151,8 +160,8 @@ export async function setupBrowser() {
             '--disable-extensions',
             '--disable-default-apps',
             '--disable-accelerated-2d-canvas',
-            '--single-process',
-            '--no-zygote',
+//            '--single-process',  //está causando crash
+//            '--no-zygote',       //está causando crash
             
             // Localização
             '--lang=pt-BR',
@@ -492,6 +501,12 @@ export async function processCategory(browser, categoria) {
 
                 // Adicionar dados ML ao produto
                 produto.dadosMercadoLivre = dadosML;
+                if (dadosML && Array.isArray(dadosML.produtos)) {
+                    produto.ml_top3_produtos = dadosML.produtos.slice(0, 3);
+                } else {
+                    produto.ml_top3_produtos = [];
+                }
+
                 produtosComML.push(produto);
 
             } catch (mlError) {
@@ -635,8 +650,8 @@ export async function processCategory(browser, categoria) {
         logSucesso(`💾 FASE 6: Salvando dados no banco Supabase`);
         
         let produtosSalvos = 0;
-        let errosSalvamento = 0;
-        
+        let errosSalvamento = 0;        
+
         // Salvar cada produto no banco
         for (const produto of produtosOrdenados) {
             try {
@@ -647,32 +662,43 @@ export async function processCategory(browser, categoria) {
                     continue;
                 }
                 
+                /*
                 // Preparar dados para o banco
                 const dadosBanco = {
                     product_id_aliexpress: produto.product_id,
+                    tenant_id: tenantId,
                     nome: produto.nome,
+                    nome_traduzido: produto.nome_traduzido,
                     categoria: categoria,
                     preco_aliexpress: produto.preco,
-                    descricao: produto.descricao || '',
-                    url_imagem: produto.imagem || produto.imagemURL || (Array.isArray(produto.imagens) ? produto.imagens[0] : undefined),
                     url_aliexpress: produto.url || produto.href,
-                    avaliacoes: produto.avaliacoes || 0,
+                    score_total: produto.scoreTotal.total || 0,
+                    score_categoria: produto.scoreTotal.categoria || 'bronze',
+                    aprovado_quantitativo: produto.aprovadoQuantitativo.aprovado,
+                    aprovado_qualitativo: produto.aprovadoQualitativo,
+                    aprovado_final: produto.aprovadoFinal,
+                    ml_top3_produtos: produto.mlTop3Produtos || [],
+
+                    descricao: produto.descricao || '',
+                    url_imagem: produto.imagems,
+                    
+                    avaliacoes: produto.reviews || 0,
                     rating: produto.rating || 0,
                     vendidos: produto.vendidos || 0,
                     shipping_info: produto.shipping || '',
                     dados_ml: produto.dadosMercadoLivre || null,
+                    
                     metricas_qualidade: {
                         riskLevel: produto.riskLevel,
                         qualitativeFilters: produto.qualitativeFilters,
                         quantitativeFilters: produto.quantitativeFilters,
                         marginValidation: produto.marginValidation
                     },
-                    score_total: produto.scoreTotal || 0,
-                    score_categoria: produto.scoreCategoria || 'bronze',
+                    
                     status: 'novo'
                 };
-                
-                const resultado = await salvarProdutoCompleto(dadosBanco);
+                */
+                const resultado = await salvarProdutoCompleto(produto);
                 
                 if (resultado.sucesso) {
                     produtosSalvos++;
@@ -1942,3 +1968,4 @@ async function cleanupBrowser(browser) {
         logErro(`💥 Erro crítico na limpeza do browser: ${error.message}`);
     }
 }
+

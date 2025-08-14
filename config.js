@@ -135,6 +135,7 @@ try {
  * Configurações de APIs externas
  */
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+export const TENANT_ID = process.env.TENANT_ID || null;
 
 // =================================
 // CONFIGURAÇÕES DE PRODUTOS E FILTROS
@@ -402,6 +403,9 @@ export const CONFIG = {
         openaiKey: OPENAI_API_KEY
     },
     
+
+    tenant: { id: TENANT_ID },
+
     // Filtros de produtos
     filters: {
         categories: CATEGORIES,

@@ -133,7 +133,8 @@ function extrairPrintedResults(state) {
         title,
         permalink: permalink ? normalizarUrlProduto(permalink) : '',
         price_brl: typeof price === 'number' ? price : null,
-        ad_type: adType || null
+        ad_type: adType || null,
+        nome_traduzido: produtoAli.nomeTraduzido || produtoAli.nome
       };
     }
     return null;
@@ -317,7 +318,8 @@ export async function buscarMelhorProdutoML(browser, produtoAli) {
                 id: pr.id || extrairIdMLB(permalink),
                 position: i + 1,
                 ad_type: pr.ad_type || null,
-                price_brl: typeof pr.price_brl === 'number' ? pr.price_brl : null
+                price_brl: typeof pr.price_brl === 'number' ? pr.price_brl : null,
+                nomeTraduzido: termoBusca,
               });
             }
             logSucesso(`🟢 ML: fallback via __PRELOADED_STATE__/printed_result coletou ${itens.length} itens`);
@@ -379,12 +381,13 @@ export async function buscarMelhorProdutoML(browser, produtoAli) {
     let maiorSimilaridade = 0;
     const top3Produtos = [];
 
+    //comparação de imagens
     for (const item of itens) {
       try {
         const imgAli = normalizarUrlImagem(produtoAli.imagemURL);
         const imgML = normalizarUrlImagem(item.imagem);
         let comp = { similar: false, similaridade: 0 };
-        if (imgAli && imgML) comp = await compararImagensPorHash(imgAli, imgML);
+         if (imgAli && imgML) comp = await compararImagensPorHash(imgAli, imgML);
 
         const produtoComSimilaridade = {
           ...item,
@@ -398,8 +401,8 @@ export async function buscarMelhorProdutoML(browser, produtoAli) {
           maiorSimilaridade = comp.similaridade;
           melhorProduto = produtoComSimilaridade;
         }
-      } catch (e) {
-        console.warn('Erro na comparação de imagem:', e.message);
+      } catch (e) {        
+        console.log(`❌ Erro na comparação de imagem: ${e.message}`);
         top3Produtos.push({
           ...item,
           similaridade: 0,
@@ -552,7 +555,10 @@ export async function buscarMelhorProdutoML(browser, produtoAli) {
 
     top3Produtos.sort((a, b) => b.similaridade - a.similaridade);
     const top3Final = top3Produtos.slice(0, 3);
-    return { melhorProduto, mlTop3Produtos: top3Final, mlTop5Produtos: itens.slice(0, 5), totalEncontrados: itens.length };
+    return { melhorProduto,
+      mlTop3Produtos: top3Final,
+      mlTop5Produtos: itens.slice(0, 5),
+      totalEncontrados: itens.length };
   } catch (err) {
     console.error('Erro ao buscar ML:', err.message);
     return null;

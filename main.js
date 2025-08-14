@@ -60,7 +60,34 @@ const iniciar = async () => {
                         continue;
                     }
                     try {
-                        await salvarProdutoCompleto(produto);
+                        // Busca tenant_id e valida UUID
+                        const tenantId = (CONFIG.tenant.id && typeof CONFIG.tenant.id === 'string' && /^[0-9a-fA-F-]{36}$/.test(CONFIG.tenant.id)) ? CONFIG.tenant.id : undefined;
+
+                        // Extrair dados do Mercado Livre
+                        let mlTop3 = produto.dadosMercadoLivre?.mlTop3Produtos;
+                        if (!Array.isArray(mlTop3)) mlTop3 = [];
+
+                        // Validar campos obrigatórios
+                        if (!produto.product_id) throw new Error('Campo obrigatório ausente: product_id');
+                        if (!produto.nome) throw new Error('Campo obrigatório ausente: nome');
+                        if (!produto.nomeTraduzido && !produto.nome) throw new Error('Campo obrigatório ausente: nome_traduzido');
+                        if (!tenantId) throw new Error('Campo obrigatório ausente ou inválido: tenant_id');
+
+                        // Preparar dados para inserção
+                        const dadosProduto = {
+                          product_id_aliexpress: produto.product_id,
+                          tenant_id: tenantId,
+                          nome: produto.nome,
+                          nome_traduzido: produto.nomeTraduzido || produto.nome,
+                          categoria: produto.categoria,
+                          preco_aliexpress: parseFloat(produto.preco?.toString().replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+                          url_aliexpress: produto.url || produto.href,
+                          // ...outros campos...
+                          ml_top3_produtos: mlTop3,
+                          // ...outros campos...
+                        };
+
+                        await salvarProdutoCompleto(dadosProduto);
                         totalProdutosSalvos++;
                     } catch (dbError) {
                         logErro(`⚠️ Erro ao salvar produto no banco: ${dbError.message}`);

@@ -9,6 +9,7 @@
 
 import { supabase } from './supabase-client.js';
 import { gerarHashProduto } from '../utils/duplicate-checker.js';
+import { CONFIG } from '../config.js';
 
 /**
  * Salvar produto completo com todas as melhorias implementadas
@@ -18,6 +19,9 @@ import { gerarHashProduto } from '../utils/duplicate-checker.js';
  */
 export async function salvarProdutoCompleto(produto, tenantId = null) {
     try {
+        //busca tenant_id
+        const tenantId = (CONFIG.tenant.id && typeof CONFIG.tenant.id === 'string' && /^[0-9a-fA-F-]{36}$/.test(CONFIG.tenant.id)) ? CONFIG.tenant.id : undefined;
+        
         // Gerar hash para anti-duplicidade
         const hashDuplicidade = gerarHashProduto(produto);
         
@@ -35,6 +39,13 @@ export async function salvarProdutoCompleto(produto, tenantId = null) {
         const mlTop3 = produto.dadosMercadoLivre?.mlTop3Produtos || null;
         const precoMLMedio = mlTop3?.length > 0 ? 
             mlTop3.reduce((sum, p) => sum + (p.preco || 0), 0) / mlTop3.length : null;
+
+        // Validar campos obrigatórios
+        if (!produto.product_id) throw new Error('Campo obrigatório ausente: product_id');
+        if (!produto.nome) throw new Error('Campo obrigatório ausente: nome');
+        if (!produto.nomeTraduzido && !produto.nome) throw new Error('Campo obrigatório ausente: nome_traduzido');
+        if (!mlTop3 || !Array.isArray(mlTop3)) throw new Error('Campo obrigatório ausente: ml_top3_produtos');
+        if (!tenantId) throw new Error('Campo obrigatório ausente ou inválido: tenant_id');
 
         // Preparar dados para inserção
         const dadosProduto = {
@@ -77,7 +88,6 @@ export async function salvarProdutoCompleto(produto, tenantId = null) {
             imagem_comparada: produto.dadosMercadoLivre?.melhorMatch?.imagemComparada ?? true,
             fonte_de_verificacao: produto.dadosMercadoLivre?.melhorMatch?.fonteDeVerificacao || 'imagem',
             risco_imagem: produto.dadosMercadoLivre?.melhorMatch?.riscoImagem || false,
-            compatibilidade_textual: produto.dadosMercadoLivre?.melhorMatch?.compatibilidadeTextual || null,
             ratio_preco: produto.dadosMercadoLivre?.melhorMatch?.ratioPreco || null,
             
             // ⏰ Timestamps

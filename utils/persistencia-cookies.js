@@ -38,8 +38,9 @@ export function configurarPersistenciaCookies(browserConfig) {
         '--disable-features=VizDisplayCompositor',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
+        '--disable-renderer-backgrounding'     
       ]
+
     };
 
     console.log('🍪 Persistência de cookies configurada');
